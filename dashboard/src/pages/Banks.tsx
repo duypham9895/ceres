@@ -5,6 +5,7 @@ import { apiFetch } from '../api/client';
 import type { PaginatedResponse } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import CrawlButton from '../components/CrawlButton';
+import { formatDate } from '../utils/format';
 
 interface Bank {
   id: number;
@@ -18,11 +19,6 @@ interface Bank {
 
 const CATEGORIES = ['All', 'BUMN', 'SWASTA_NASIONAL', 'BPD', 'ASING', 'SYARIAH'] as const;
 const LIMIT = 20;
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '-';
-  return new Date(dateStr).toLocaleString();
-}
 
 export default function Banks() {
   const [page, setPage] = useState(1);
@@ -47,14 +43,14 @@ export default function Banks() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Banks</h2>
+        <h2 className="text-2xl font-bold text-text-heading">Banks</h2>
         <div className="flex items-center gap-4">
-          <label className="text-sm text-gray-600">
+          <label className="text-sm text-text-secondary">
             Category:
             <select
               value={category}
               onChange={(e) => { setCategory(e.target.value); setPage(1); }}
-              className="ml-2 border border-gray-300 rounded-md px-3 py-1.5 text-sm"
+              className="ml-2 border border-border rounded-md px-3 py-1.5 text-sm bg-bg-card text-text-body"
             >
               {CATEGORIES.map((cat) => (
                 <option key={cat} value={cat}>{cat}</option>
@@ -64,37 +60,37 @@ export default function Banks() {
         </div>
       </div>
 
-      {isLoading && <p className="text-gray-500">Loading banks...</p>}
-      {isError && <p className="text-red-500">Error: {error instanceof Error ? error.message : 'Failed to load banks'}</p>}
+      {isLoading && <p className="text-text-muted">Loading banks...</p>}
+      {isError && <p className="text-error">Error: {error instanceof Error ? error.message : 'Failed to load banks'}</p>}
 
       {data && (
         <>
-          <div className="overflow-x-auto bg-white rounded-lg shadow">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+          <div className="overflow-x-auto bg-bg-card rounded-lg shadow">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-bg-card">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Code</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Crawled</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Programs</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Code</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Name</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Category</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Last Crawled</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Programs</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-border">
                 {data.data.map((bank) => (
                   <tr
                     key={bank.id}
                     onClick={() => navigate(`/banks/${bank.id}`)}
-                    className="hover:bg-gray-50 cursor-pointer"
+                    className="hover:bg-bg-hover cursor-pointer"
                   >
-                    <td className="px-4 py-3 text-sm font-mono text-gray-900">{bank.bank_code}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{bank.bank_name}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{bank.bank_category}</td>
+                    <td className="px-4 py-3 text-sm font-[var(--font-mono)] text-text-heading">{bank.bank_code}</td>
+                    <td className="px-4 py-3 text-sm text-text-heading">{bank.bank_name}</td>
+                    <td className="px-4 py-3 text-sm text-text-secondary">{bank.bank_category}</td>
                     <td className="px-4 py-3 text-sm"><StatusBadge status={bank.website_status} /></td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{formatDate(bank.last_crawled_at)}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{bank.programs_count}</td>
+                    <td className="px-4 py-3 text-sm text-text-secondary">{formatDate(bank.last_crawled_at)}</td>
+                    <td className="px-4 py-3 text-sm font-[var(--font-mono)] text-text-heading">{bank.programs_count}</td>
                     <td className="px-4 py-3 text-sm" onClick={(e) => e.stopPropagation()}>
                       <CrawlButton agent="daily" label="Crawl" bank={bank.bank_code} variant="secondary" />
                     </td>
@@ -105,21 +101,21 @@ export default function Banks() {
           </div>
 
           <div className="flex items-center justify-between mt-4">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-text-secondary">
               Showing {(page - 1) * LIMIT + 1}–{Math.min(page * LIMIT, data.total)} of {data.total}
             </p>
             <div className="flex gap-2">
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page <= 1}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-md disabled:opacity-50 hover:bg-gray-50"
+                className="px-3 py-1.5 text-sm border border-border rounded-md disabled:opacity-50 hover:bg-bg-hover text-text-body"
               >
                 Previous
               </button>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}
-                className="px-3 py-1.5 text-sm border border-gray-300 rounded-md disabled:opacity-50 hover:bg-gray-50"
+                className="px-3 py-1.5 text-sm border border-border rounded-md disabled:opacity-50 hover:bg-bg-hover text-text-body"
               >
                 Next
               </button>

@@ -1,18 +1,18 @@
 const STATUS_STYLES: Record<string, string> = {
-  active: 'bg-green-100 text-green-800',
-  unreachable: 'bg-red-100 text-red-800',
-  blocked: 'bg-yellow-100 text-yellow-800',
-  unknown: 'bg-gray-100 text-gray-600',
-  success: 'bg-green-100 text-green-800',
-  failed: 'bg-red-100 text-red-800',
-  running: 'bg-blue-100 text-blue-800',
-  partial: 'bg-yellow-100 text-yellow-800',
-  timeout: 'bg-orange-100 text-orange-800',
+  active: 'bg-success/15 text-success-dim',
+  unreachable: 'bg-error/15 text-error-dim',
+  blocked: 'bg-warning/15 text-warning-dim',
+  unknown: 'bg-text-dim/15 text-text-dim',
+  success: 'bg-success/15 text-success-dim',
+  failed: 'bg-error/15 text-error-dim',
+  running: 'bg-running/15 text-running-dim',
+  partial: 'bg-warning/15 text-warning-dim',
+  timeout: 'bg-error/15 text-error-dim',
 };
 
-export default function StatusBadge({ status }: { status: string }) {
+export default function StatusBadge({ status }: { readonly status: string }) {
   return (
-    <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_STYLES[status] || STATUS_STYLES.unknown}`}>
+    <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${STATUS_STYLES[status] ?? STATUS_STYLES.unknown}`}>
       {status}
     </span>
   );

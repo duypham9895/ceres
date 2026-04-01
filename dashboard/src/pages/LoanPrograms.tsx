@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../api/client';
 import type { PaginatedResponse } from '../api/client';
+import { formatRange, formatAmountRange } from '../utils/format';
 
 const LOAN_TYPES = [
   'KPR', 'KPA', 'KPT', 'MULTIGUNA', 'KENDARAAN', 'MODAL_KERJA',
@@ -33,39 +34,15 @@ interface LoanProgram {
 
 const LIMIT = 20;
 
-function formatRange(min: number | null, max: number | null, suffix: string): string {
-  if (min == null && max == null) return '-';
-  if (min != null && max != null) return `${min}${suffix} - ${max}${suffix}`;
-  if (min != null) return `${min}${suffix}+`;
-  return `up to ${max}${suffix}`;
-}
-
-function formatAmount(value: number | null): string {
-  if (value == null) return '';
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(0)}K`;
-  return String(value);
-}
-
-function formatAmountRange(min: number | null, max: number | null): string {
-  if (min == null && max == null) return '-';
-  const minStr = formatAmount(min);
-  const maxStr = formatAmount(max);
-  if (min != null && max != null) return `${minStr} - ${maxStr}`;
-  if (min != null) return `${minStr}+`;
-  return `up to ${maxStr}`;
-}
-
 function ConfidenceBar({ value }: { readonly value: number }) {
   const pct = Math.round(value * 100);
-  const color = pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-yellow-500' : 'bg-red-500';
+  const color = pct >= 80 ? 'bg-success' : pct >= 50 ? 'bg-warning' : 'bg-error';
   return (
     <div className="flex items-center gap-2">
-      <div className="w-20 h-2 bg-gray-200 rounded-full overflow-hidden">
+      <div className="w-20 h-2 bg-border rounded-full overflow-hidden">
         <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
       </div>
-      <span className="text-xs text-gray-600">{pct}%</span>
+      <span className="text-xs font-[var(--font-mono)] text-text-secondary">{pct}%</span>
     </div>
   );
 }
@@ -93,12 +70,12 @@ export default function LoanPrograms() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">Loan Programs</h2>
+      <h2 className="text-2xl font-bold text-text-heading mb-6">Loan Programs</h2>
 
       {/* Filters */}
       <div className="flex gap-4 mb-6">
         <select
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+          className="border border-border rounded-lg px-3 py-2 text-sm bg-bg-card text-text-body"
           value={loanType}
           onChange={(e) => { setLoanType(e.target.value); setPage(1); }}
         >
@@ -109,7 +86,7 @@ export default function LoanPrograms() {
         </select>
 
         <select
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+          className="border border-border rounded-lg px-3 py-2 text-sm bg-bg-card text-text-body"
           value={sort}
           onChange={(e) => { setSort(e.target.value); setPage(1); }}
         >
@@ -119,26 +96,26 @@ export default function LoanPrograms() {
         </select>
       </div>
 
-      {isLoading && <p className="text-gray-500">Loading loan programs...</p>}
-      {isError && <p className="text-red-600">Error: {(error as Error).message}</p>}
+      {isLoading && <p className="text-text-muted">Loading loan programs...</p>}
+      {isError && <p className="text-error">Error: {(error as Error).message}</p>}
 
       {data && (
         <>
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+          <div className="bg-bg-card rounded-lg border border-border overflow-hidden">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-bg-card">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Program</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bank</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Interest Rate</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount Range</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tenure</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Confidence</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Completeness</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Program</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Bank</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Type</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Interest Rate</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Amount Range</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Tenure</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Confidence</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Completeness</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-border">
                 {data.data.map((program) => (
                   <ProgramRow
                     key={program.id}
@@ -149,7 +126,7 @@ export default function LoanPrograms() {
                 ))}
                 {data.data.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={8} className="px-4 py-8 text-center text-text-muted">
                       No loan programs found.
                     </td>
                   </tr>
@@ -160,22 +137,22 @@ export default function LoanPrograms() {
 
           {/* Pagination */}
           <div className="flex items-center justify-between mt-4">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-text-secondary">
               Showing {(page - 1) * LIMIT + 1}-{Math.min(page * LIMIT, data.total)} of {data.total}
             </p>
             <div className="flex gap-2">
               <button
-                className="px-3 py-1 text-sm border rounded disabled:opacity-50"
+                className="px-3 py-1 text-sm border border-border rounded disabled:opacity-50 hover:bg-bg-hover text-text-body"
                 disabled={page <= 1}
                 onClick={() => setPage(page - 1)}
               >
                 Previous
               </button>
-              <span className="px-3 py-1 text-sm text-gray-600">
+              <span className="px-3 py-1 text-sm text-text-secondary">
                 Page {page} of {totalPages}
               </span>
               <button
-                className="px-3 py-1 text-sm border rounded disabled:opacity-50"
+                className="px-3 py-1 text-sm border border-border rounded disabled:opacity-50 hover:bg-bg-hover text-text-body"
                 disabled={page >= totalPages}
                 onClick={() => setPage(page + 1)}
               >
@@ -201,23 +178,23 @@ function ProgramRow({
   return (
     <>
       <tr
-        className="hover:bg-gray-50 cursor-pointer"
+        className="hover:bg-bg-hover cursor-pointer"
         onClick={onToggle}
       >
-        <td className="px-4 py-3 text-sm font-medium text-gray-900">{program.program_name}</td>
-        <td className="px-4 py-3 text-sm text-gray-600">{program.bank_code}</td>
+        <td className="px-4 py-3 text-sm font-medium text-text-heading">{program.program_name}</td>
+        <td className="px-4 py-3 text-sm font-[var(--font-mono)] text-text-secondary">{program.bank_code}</td>
         <td className="px-4 py-3 text-sm">
-          <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium">
+          <span className="px-2 py-0.5 bg-running/15 text-running-dim rounded text-xs font-medium">
             {program.loan_type}
           </span>
         </td>
-        <td className="px-4 py-3 text-sm text-gray-600">
+        <td className="px-4 py-3 text-sm font-[var(--font-mono)] text-text-secondary">
           {formatRange(program.min_interest_rate, program.max_interest_rate, '%')}
         </td>
-        <td className="px-4 py-3 text-sm text-gray-600">
+        <td className="px-4 py-3 text-sm font-[var(--font-mono)] text-text-secondary">
           {formatAmountRange(program.min_amount, program.max_amount)}
         </td>
-        <td className="px-4 py-3 text-sm text-gray-600">
+        <td className="px-4 py-3 text-sm font-[var(--font-mono)] text-text-secondary">
           {formatRange(program.min_tenure_months, program.max_tenure_months, ' mo')}
         </td>
         <td className="px-4 py-3 text-sm">
@@ -229,8 +206,8 @@ function ProgramRow({
       </tr>
       {isExpanded && program.raw_data && (
         <tr>
-          <td colSpan={8} className="px-4 py-4 bg-gray-50">
-            <pre className="text-xs text-gray-700 overflow-auto max-h-64 p-3 bg-white rounded border">
+          <td colSpan={8} className="px-4 py-4 bg-bg-primary">
+            <pre className="text-xs text-text-secondary font-[var(--font-mono)] overflow-auto max-h-64 p-3 bg-bg-card rounded border border-border">
               {JSON.stringify(program.raw_data, null, 2)}
             </pre>
           </td>

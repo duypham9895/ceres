@@ -1,16 +1,17 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { LayoutDashboard, Building2, Coins, ScrollText, Zap, Lightbulb } from 'lucide-react';
 import { useCrawlStatus } from '../context/CrawlStatusContext';
 import CrawlPipelineMonitor from './CrawlPipelineMonitor';
 import CrawlToast from './CrawlToast';
 
 const NAV_ITEMS = [
-  { path: '/', label: 'Overview', icon: '📊' },
-  { path: '/banks', label: 'Banks', icon: '🏦' },
-  { path: '/programs', label: 'Loan Programs', icon: '💰' },
-  { path: '/logs', label: 'Crawl Logs', icon: '📋' },
-  { path: '/strategies', label: 'Strategies', icon: '🎯' },
-  { path: '/recommendations', label: 'Recommendations', icon: '💡' },
+  { path: '/', label: 'Overview', Icon: LayoutDashboard },
+  { path: '/banks', label: 'Banks', Icon: Building2 },
+  { path: '/programs', label: 'Loan Programs', Icon: Coins },
+  { path: '/logs', label: 'Crawl Logs', Icon: ScrollText },
+  { path: '/strategies', label: 'Strategies', Icon: Zap },
+  { path: '/recommendations', label: 'Recommendations', Icon: Lightbulb },
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {
@@ -18,29 +19,33 @@ export default function Layout({ children }: { children: ReactNode }) {
   const { isConnected } = useCrawlStatus();
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-6 border-b">
-          <h1 className="text-xl font-bold text-gray-900">CERES</h1>
-          <p className="text-sm text-gray-500">Ops Dashboard</p>
+    <div className="flex h-screen bg-bg-primary">
+      <aside className="w-56 bg-bg-card border-r border-border flex flex-col shrink-0">
+        <div className="p-5 border-b border-border">
+          <h1 className="text-lg font-bold tracking-widest text-text-heading">CERES</h1>
+          <p className="text-[11px] text-text-muted tracking-wide">Financial Intelligence</p>
         </div>
-        <nav className="flex-1 p-4 space-y-1">
-          {NAV_ITEMS.map(({ path, label, icon }) => (
-            <Link key={path} to={path}
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${
-                location.pathname === path
-                  ? 'bg-blue-50 text-blue-700 font-medium'
-                  : 'text-gray-600 hover:bg-gray-100'
-              }`}>
-              <span>{icon}</span>{label}
-            </Link>
-          ))}
+        <nav className="flex-1 p-3 space-y-0.5">
+          {NAV_ITEMS.map(({ path, label, Icon }) => {
+            const active = location.pathname === path;
+            return (
+              <Link key={path} to={path}
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] transition-colors ${
+                  active
+                    ? 'bg-bg-hover text-text-heading font-medium border border-border-light'
+                    : 'text-text-secondary hover:bg-bg-hover hover:text-text-body'
+                }`}>
+                <Icon size={16} className={active ? 'text-accent-light' : 'opacity-60'} />
+                {label}
+              </Link>
+            );
+          })}
         </nav>
         <CrawlPipelineMonitor />
-        <div className="p-4 border-t">
-          <div className={`flex items-center gap-2 text-xs ${isConnected ? 'text-green-600' : 'text-red-500'}`}>
-            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-            {isConnected ? 'Connected' : 'Reconnecting...'}
+        <div className="p-4 border-t border-border">
+          <div className={`flex items-center gap-1.5 text-[11px] ${isConnected ? 'text-text-muted' : 'text-error'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-success animate-pulse-green' : 'bg-error'}`} />
+            {isConnected ? 'WebSocket Connected' : 'Reconnecting...'}
           </div>
         </div>
       </aside>

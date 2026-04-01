@@ -21,6 +21,7 @@ export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const queryClient = useQueryClient();
   const [lastEvent, setLastEvent] = useState<CrawlEvent | null>(null);
+  const [eventBuffer, setEventBuffer] = useState<CrawlEvent[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -37,6 +38,7 @@ export function useWebSocket() {
       const data = JSON.parse(event.data) as CrawlEvent;
       if (data.type) {
         setLastEvent(data);
+        setEventBuffer((prev) => [data, ...prev].slice(0, 20));
       }
       if (data.type === 'job_finish' || data.type === 'job_error') {
         queryClient.invalidateQueries();
@@ -45,6 +47,7 @@ export function useWebSocket() {
 
     ws.onclose = () => {
       setIsConnected(false);
+      setEventBuffer([]);
       reconnectTimer.current = setTimeout(connect, 3000);
     };
   }, [queryClient]);
@@ -57,5 +60,5 @@ export function useWebSocket() {
     };
   }, [connect]);
 
-  return { lastEvent, isConnected };
+  return { lastEvent, eventBuffer, isConnected };
 }
