@@ -96,7 +96,7 @@ class StrategistAgent(BaseAgent):
                 "rate_limit_ms": analysis["rate_limit_ms"],
             }
 
-            await self.db.upsert_strategy(strategy_data)
+            await self.db.upsert_strategy(**strategy_data)
 
             if has_existing:
                 strategies_updated += 1

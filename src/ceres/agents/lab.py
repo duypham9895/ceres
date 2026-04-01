@@ -133,10 +133,10 @@ class LabAgent(BaseAgent):
 
             feedback_data = {
                 "strategy_id": strategy["id"],
-                "approach_name": approach["name"],
-                "success": result["success"],
+                "test_approach": approach["name"],
+                "result": "success" if result["success"] else "failure",
             }
-            await self.db.add_strategy_feedback(feedback_data)
+            await self.db.add_strategy_feedback(**feedback_data)
 
             if result["success"]:
                 update_data = {
@@ -152,7 +152,7 @@ class LabAgent(BaseAgent):
                         strategy.get("rate_limit_ms", 2000),
                     ),
                 }
-                await self.db.upsert_strategy(update_data)
+                await self.db.upsert_strategy(**update_data)
                 return {"tests_run": tests_run, "success": True}
 
         return {"tests_run": tests_run, "success": False}
