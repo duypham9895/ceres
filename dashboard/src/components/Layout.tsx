@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useCrawlStatus } from '../context/CrawlStatusContext';
+import CrawlPipelineMonitor from './CrawlPipelineMonitor';
+import CrawlToast from './CrawlToast';
 
 const NAV_ITEMS = [
   { path: '/', label: 'Overview', icon: '📊' },
@@ -13,7 +15,7 @@ const NAV_ITEMS = [
 
 export default function Layout({ children }: { children: ReactNode }) {
   const location = useLocation();
-  const { lastEvent, isConnected } = useWebSocket();
+  const { isConnected } = useCrawlStatus();
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -34,19 +36,16 @@ export default function Layout({ children }: { children: ReactNode }) {
             </Link>
           ))}
         </nav>
+        <CrawlPipelineMonitor />
         <div className="p-4 border-t">
           <div className={`flex items-center gap-2 text-xs ${isConnected ? 'text-green-600' : 'text-red-500'}`}>
             <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-            {isConnected ? 'Connected' : 'Disconnected'}
+            {isConnected ? 'Connected' : 'Reconnecting...'}
           </div>
-          {lastEvent && lastEvent.event !== 'subscribed' && (
-            <p className="text-xs text-gray-400 mt-1 truncate">
-              {lastEvent.agent}: {lastEvent.message || lastEvent.event}
-            </p>
-          )}
         </div>
       </aside>
       <main className="flex-1 overflow-auto p-8">{children}</main>
+      <CrawlToast />
     </div>
   );
 }
