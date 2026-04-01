@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 
 export interface HeatmapBank {
+  readonly bank_id: string;
   readonly bank_code: string;
   readonly bank_name: string;
   readonly website_status: string;
@@ -63,7 +64,7 @@ export default function RateHeatmap({ banks }: { readonly banks: readonly Heatma
             {banks.map((bank) => (
               <tr
                 key={bank.bank_code}
-                onClick={() => navigate(`/banks/${bank.bank_code}`)}
+                onClick={() => navigate(`/banks/${bank.bank_id}`)}
                 className="hover:bg-bg-hover cursor-pointer border-b border-border/50"
               >
                 <td className="px-3 py-1.5 text-text-body font-medium">{bank.bank_name}</td>

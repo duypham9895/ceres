@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
+
+
+def _iso(value: object) -> str | None:
+    """Convert a datetime to ISO string; pass strings through unchanged."""
+    if value is None:
+        return None
+    return value.isoformat() if isinstance(value, datetime) else str(value)
 
 router = APIRouter()
 
@@ -49,7 +57,7 @@ async def health_check(request: Request) -> dict:
             "job_id": current_job.job_id,
             "agent": current_job.agent,
             "status": current_job.status.value if hasattr(current_job.status, 'value') else str(current_job.status),
-            "started_at": current_job.started_at,
+            "started_at": _iso(current_job.started_at),
         }
         if step_info is not None:
             current_job_data = {**current_job_data, **step_info}
@@ -70,7 +78,7 @@ async def health_check(request: Request) -> dict:
         """)
         if row is not None and row["total_count"] is not None and row["total_count"] > 0:
             last_completed = {
-                "finished_at": row["finished_at"],
+                "finished_at": _iso(row["finished_at"]),
                 "success_count": row["success_count"],
                 "total_count": row["total_count"],
             }
@@ -358,11 +366,11 @@ async def rates_heatmap(request: Request) -> dict:
 
     rows = await db.pool.fetch(
         """
-        SELECT b.bank_code, b.bank_name, b.website_status,
+        SELECT b.id AS bank_id, b.bank_code, b.bank_name, b.website_status,
                lp.loan_type, MIN(lp.min_interest_rate) AS min_rate
         FROM banks b
         LEFT JOIN loan_programs lp ON lp.bank_id = b.id AND lp.is_latest = true
-        GROUP BY b.bank_code, b.bank_name, b.website_status, lp.loan_type
+        GROUP BY b.id, b.bank_code, b.bank_name, b.website_status, lp.loan_type
         ORDER BY b.bank_code
         """
     )
@@ -372,6 +380,7 @@ async def rates_heatmap(request: Request) -> dict:
         code = row["bank_code"]
         if code not in banks:
             banks[code] = {
+                "bank_id": str(row["bank_id"]),
                 "bank_code": code,
                 "bank_name": row["bank_name"],
                 "website_status": row["website_status"],
@@ -456,7 +465,7 @@ async def trigger_crawl(
             "job_id": job.job_id,
             "agent": job.agent,
             "status": job.status.value if hasattr(job.status, 'value') else str(job.status),
-            "started_at": job.started_at,
+            "started_at": _iso(job.started_at),
         },
         status_code=202,
     )

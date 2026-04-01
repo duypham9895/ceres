@@ -13,6 +13,7 @@ function renderWithRouter(banks: readonly HeatmapBank[]) {
 
 const makeBanks = (overrides: Partial<HeatmapBank>[] = []): HeatmapBank[] =>
   overrides.map((o, i) => ({
+    bank_id: `uuid-${i}`,
     bank_code: `BANK${i}`,
     bank_name: `Bank ${i}`,
     website_status: 'active',
