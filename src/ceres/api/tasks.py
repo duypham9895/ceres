@@ -196,6 +196,35 @@ class CrawlTaskRunner:
             except Exception:
                 logger.exception("Broadcast callback failed")
 
+    @staticmethod
+    def _normalize_result(result: dict, agent_name: str) -> dict:
+        """Add standardized bank count fields to agent results without mutation."""
+        if "banks_processed" in result:
+            return result
+
+        if agent_name == "scout":
+            return {
+                **result,
+                "banks_processed": result.get("banks_checked", 0),
+                "banks_total": result.get("banks_checked", 0),
+                "banks_failed": result.get("unreachable", 0) + result.get("blocked", 0),
+            }
+        if agent_name == "crawler":
+            return {
+                **result,
+                "banks_processed": result.get("banks_crawled", 0),
+                "banks_total": result.get("banks_crawled", 0) + result.get("banks_failed", 0),
+                "banks_failed": result.get("banks_failed", 0),
+            }
+        if agent_name == "parser":
+            return {
+                **result,
+                "banks_processed": result.get("programs_parsed", 0),
+                "banks_total": result.get("programs_parsed", 0) + len(result.get("errors", [])),
+                "banks_failed": len(result.get("errors", [])),
+            }
+        return {**result, "banks_processed": 0, "banks_total": 0, "banks_failed": 0}
+
     # ------------------------------------------------------------------
     # Agent runners (lazy imports)
     # ------------------------------------------------------------------
@@ -228,6 +257,7 @@ class CrawlTaskRunner:
             })
 
             step_result = await step_fn(**kwargs)
+            step_result = self._normalize_result(step_result, step_name)
             results[step_name] = step_result
 
             await self._broadcast({
