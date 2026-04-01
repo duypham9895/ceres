@@ -1,0 +1,4 @@
+crawl:
+  max_concurrency: 5
+  default_rate_limit_ms: 2000
+  max_retries: 3
