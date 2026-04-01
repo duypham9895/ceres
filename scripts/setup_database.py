@@ -22,7 +22,7 @@ async def main() -> None:
         sys.exit(1)
 
     sql = schema_path.read_text()
-    conn = await asyncpg.connect(url)
+    conn = await asyncpg.connect(url, statement_cache_size=0)
 
     try:
         print("Running schema migration...")

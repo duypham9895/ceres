@@ -171,8 +171,16 @@ async def _show_status(bank_code: Optional[str] = None) -> None:
     db = Database(config.database_url)
     try:
         await db.connect()
+
+        # Show entity counts
+        banks = await db.fetch_banks()
+        programs = await db.fetch_loan_programs(latest_only=True)
+        click.echo("\n--- CERES Overview ---")
+        click.echo(f"  Banks: {len(banks)}")
+        click.echo(f"  Loan Programs (latest): {len(programs)}")
+
         stats = await db.get_crawl_stats(days=7)
-        click.echo("\n--- CERES Status (last 7 days) ---")
+        click.echo("\n--- Crawl Stats (last 7 days) ---")
         for key, value in stats.items():
             click.echo(f"  {key}: {value}")
 

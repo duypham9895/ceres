@@ -27,6 +27,7 @@ class Database:
             self._dsn,
             min_size=self._min_size,
             max_size=self._max_size,
+            statement_cache_size=0,
         )
 
     async def disconnect(self) -> None:

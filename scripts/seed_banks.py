@@ -98,7 +98,7 @@ async def main() -> None:
         print("ERROR: DATABASE_URL not set")
         sys.exit(1)
 
-    conn = await asyncpg.connect(url)
+    conn = await asyncpg.connect(url, statement_cache_size=0)
     inserted = 0
     updated = 0
 
