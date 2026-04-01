@@ -119,6 +119,54 @@ class TestLoanProgramsRoute:
         assert resp.json()["data"] == []
 
 
+class TestStatusRoute:
+    @pytest.mark.asyncio
+    async def test_status_includes_step_info_when_running(self):
+        db = AsyncMock()
+        db.pool = AsyncMock()
+        runner = MagicMock()
+        job = MagicMock()
+        job.job_id = "test-123"
+        job.agent = "daily"
+        job.status = MagicMock(value="running")
+        job.started_at = "2026-04-01T12:00:00Z"
+        runner.get_current_job.return_value = job
+        runner.get_step_info.return_value = {
+            "current_step": "crawler",
+            "step_index": 2,
+            "total_steps": 4,
+        }
+        app = make_test_app(db, mock_runner=runner)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/status")
+        data = resp.json()
+        assert data["current_job"]["current_step"] == "crawler"
+        assert data["current_job"]["step_index"] == 2
+        assert data["current_job"]["total_steps"] == 4
+
+    @pytest.mark.asyncio
+    async def test_status_includes_last_completed_when_idle(self):
+        db = AsyncMock()
+        db.pool = AsyncMock()
+        db.pool.fetchrow = AsyncMock(return_value={
+            "finished_at": "2026-04-01T11:30:00Z",
+            "success_count": 54,
+            "total_count": 58,
+        })
+        runner = MagicMock()
+        runner.get_current_job.return_value = None
+        runner.get_step_info.return_value = None
+        app = make_test_app(db, mock_runner=runner)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/status")
+        data = resp.json()
+        assert data["current_job"] is None
+        assert data["last_completed"]["success_count"] == 54
+        assert data["last_completed"]["total_count"] == 58
+
+
 class TestCrawlTriggerRoutes:
     @pytest.mark.asyncio
     async def test_trigger_daily_crawl(self):

@@ -9,3 +9,4 @@ htmlcov/
 screenshots/
 dashboard/node_modules/
 dashboard/dist/
+.gstack/
