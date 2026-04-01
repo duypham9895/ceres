@@ -39,7 +39,7 @@ function SuccessRateBar({ rate }: { readonly rate: number }) {
 export default function Strategies() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['strategies'],
-    queryFn: () => apiFetch<Strategy[]>('/api/strategies'),
+    queryFn: () => apiFetch<{ data: Strategy[] }>('/api/strategies').then(r => r.data),
   });
 
   if (isLoading) return <p className="text-gray-500">Loading strategies...</p>;

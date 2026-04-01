@@ -59,7 +59,9 @@ class ScoutAgent(BaseAgent):
         url = bank["website_url"]
         bank_id = bank["id"]
         status = await self._check_website(url)
-        await self.db.update_bank_status(bank_id, status, last_crawled=True)
+        await self.db.update_bank_status(
+            bank_id=bank_id, website_status=status
+        )
         self.logger.debug(f"Bank {bank.get('bank_code', bank_id)}: {status}")
         return status
 

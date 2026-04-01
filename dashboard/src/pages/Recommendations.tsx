@@ -73,7 +73,7 @@ function RecTypeBadge({ recType }: { readonly recType: string }) {
 export default function Recommendations() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['recommendations'],
-    queryFn: () => apiFetch<Recommendation[]>('/api/recommendations'),
+    queryFn: () => apiFetch<{ data: Recommendation[] }>('/api/recommendations').then(r => r.data),
   });
 
   if (isLoading) return <p className="text-gray-500">Loading recommendations...</p>;

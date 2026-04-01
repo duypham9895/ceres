@@ -46,7 +46,7 @@ async def health_check(request: Request) -> dict:
             {
                 "job_id": current_job.job_id,
                 "agent": current_job.agent,
-                "status": current_job.status,
+                "status": current_job.status.value if hasattr(current_job.status, 'value') else str(current_job.status),
                 "started_at": current_job.started_at,
             }
             if current_job
@@ -357,7 +357,7 @@ async def trigger_crawl(
         {
             "job_id": job.job_id,
             "agent": job.agent,
-            "status": job.status,
+            "status": job.status.value if hasattr(job.status, 'value') else str(job.status),
             "started_at": job.started_at,
         },
         status_code=202,
