@@ -325,6 +325,8 @@ class Database:
         rate_floating: Optional[float] = None,
         rate_promo: Optional[float] = None,
         rate_promo_duration_months: Optional[int] = None,
+        min_interest_rate: Optional[float] = None,
+        max_interest_rate: Optional[float] = None,
         min_amount: Optional[float] = None,
         max_amount: Optional[float] = None,
         min_tenor_months: Optional[int] = None,
@@ -364,6 +366,7 @@ class Database:
             INSERT INTO loan_programs (
                 bank_id, program_name, loan_type,
                 rate_fixed, rate_floating, rate_promo, rate_promo_duration_months,
+                min_interest_rate, max_interest_rate,
                 min_amount, max_amount, min_tenor_months, max_tenor_months,
                 min_age, max_age, min_income,
                 employment_types, required_documents,
@@ -374,12 +377,13 @@ class Database:
             VALUES (
                 $1::uuid, $2, $3,
                 $4, $5, $6, $7,
-                $8, $9, $10, $11,
-                $12, $13, $14,
-                $15::jsonb, $16::jsonb,
-                $17, $18, $19,
-                $20::jsonb, $21, $22,
-                $23::jsonb, $24, true
+                $8, $9,
+                $10, $11, $12, $13,
+                $14, $15, $16,
+                $17::jsonb, $18::jsonb,
+                $19, $20, $21,
+                $22::jsonb, $23, $24,
+                $25::jsonb, $26, true
             )
             RETURNING *
             """,
@@ -390,6 +394,8 @@ class Database:
             rate_floating,
             rate_promo,
             rate_promo_duration_months,
+            min_interest_rate,
+            max_interest_rate,
             min_amount,
             max_amount,
             min_tenor_months,

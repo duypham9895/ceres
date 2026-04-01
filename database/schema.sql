@@ -78,6 +78,8 @@ CREATE TABLE loan_programs (
     rate_floating NUMERIC(6, 2),
     rate_promo NUMERIC(6, 2),
     rate_promo_duration_months INTEGER,
+    min_interest_rate NUMERIC(6, 2),
+    max_interest_rate NUMERIC(6, 2),
     min_amount NUMERIC(15, 2),
     max_amount NUMERIC(15, 2),
     min_tenor_months INTEGER,

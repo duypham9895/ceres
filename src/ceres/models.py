@@ -97,8 +97,8 @@ class LoanProgram:
     id: Optional[int] = None
     min_interest_rate: Optional[float] = None
     max_interest_rate: Optional[float] = None
-    min_loan_amount: Optional[int] = None
-    max_loan_amount: Optional[int] = None
+    min_amount: Optional[int] = None
+    max_amount: Optional[int] = None
     min_tenure_months: Optional[int] = None
     max_tenure_months: Optional[int] = None
     rate_type: Optional[str] = None
@@ -126,8 +126,8 @@ _COMPLETENESS_FIELDS: tuple[str, ...] = (
     "loan_type",
     "min_interest_rate",
     "max_interest_rate",
-    "min_loan_amount",
-    "max_loan_amount",
+    "min_amount",
+    "max_amount",
     "min_tenure_months",
     "max_tenure_months",
     "rate_type",

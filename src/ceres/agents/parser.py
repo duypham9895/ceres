@@ -60,7 +60,7 @@ class ParserAgent(BaseAgent):
             try:
                 programs = self._parse_page(raw)
                 for program in programs:
-                    await self.db.upsert_loan_program(program)
+                    await self.db.upsert_loan_program(**program)
                     programs_parsed += 1
                 await self.db.mark_parsed(raw["id"])
             except Exception as exc:
@@ -144,10 +144,10 @@ class ParserAgent(BaseAgent):
             "source_url": raw["page_url"],
             "min_interest_rate": min_rate,
             "max_interest_rate": max_rate,
-            "min_loan_amount": min_amount,
-            "max_loan_amount": max_amount,
-            "min_tenure_months": min_tenure,
-            "max_tenure_months": max_tenure,
+            "min_amount": min_amount,
+            "max_amount": max_amount,
+            "min_tenor_months": min_tenure,
+            "max_tenor_months": max_tenure,
             "data_confidence": confidence_base,
         }
 
@@ -177,10 +177,10 @@ class ParserAgent(BaseAgent):
             "source_url": raw["page_url"],
             "min_interest_rate": prog_data.get("min_interest_rate"),
             "max_interest_rate": prog_data.get("max_interest_rate"),
-            "min_loan_amount": prog_data.get("min_amount"),
-            "max_loan_amount": prog_data.get("max_amount"),
-            "min_tenure_months": prog_data.get("min_tenor_months"),
-            "max_tenure_months": prog_data.get("max_tenor_months"),
+            "min_amount": prog_data.get("min_amount"),
+            "max_amount": prog_data.get("max_amount"),
+            "min_tenor_months": prog_data.get("min_tenor_months"),
+            "max_tenor_months": prog_data.get("max_tenor_months"),
             "data_confidence": 0.7,
         }
 
