@@ -58,6 +58,9 @@ class CrawlTaskRunner:
         self._broadcast_callback: Optional[
             Callable[[dict], Coroutine[Any, Any, None]]
         ] = None
+        self._current_step: Optional[str] = None
+        self._step_index: int = 0
+        self._total_steps: int = 0
         self._agent_registry: Dict[str, Callable[..., Coroutine[Any, Any, dict]]] = {}
         self._register_agents()
 
@@ -115,6 +118,16 @@ class CrawlTaskRunner:
         """Return the currently running job, or ``None``."""
         return self._current_job
 
+    def get_step_info(self) -> Optional[dict]:
+        """Return current pipeline step tracking info, or None if not a pipeline run."""
+        if self._total_steps == 0:
+            return None
+        return {
+            "current_step": self._current_step,
+            "step_index": self._step_index,
+            "total_steps": self._total_steps,
+        }
+
     async def cancel_all(self) -> None:
         """Cancel the current task if one is running."""
         if self._current_task is not None and not self._current_task.done():
@@ -171,6 +184,9 @@ class CrawlTaskRunner:
         finally:
             self._current_job = None
             self._current_task = None
+            self._current_step = None
+            self._step_index = 0
+            self._total_steps = 0
 
     async def _broadcast(self, message: dict) -> None:
         """Send a message via the broadcast callback if one is set."""
@@ -195,18 +211,39 @@ class CrawlTaskRunner:
             ("crawler", self._run_crawler),
             ("parser", self._run_parser),
         ]
-        for step_name, step_fn in steps:
-            await self._broadcast(
-                {
-                    "type": "job_progress",
-                    "job_id": job_id,
-                    "agent": "daily",
-                    "step": step_name,
-                },
-            )
+        self._total_steps = len(steps)
+
+        for i, (step_name, step_fn) in enumerate(steps):
+            self._current_step = step_name
+            self._step_index = i
+
+            await self._broadcast({
+                "type": "job_step_start",
+                "job_id": job_id,
+                "agent": "daily",
+                "step": step_name,
+                "step_index": i,
+                "total_steps": len(steps),
+            })
+
             step_result = await step_fn(**kwargs)
             results[step_name] = step_result
 
+            await self._broadcast({
+                "type": "job_progress",
+                "job_id": job_id,
+                "agent": "daily",
+                "step": step_name,
+                "step_index": i,
+                "total_steps": len(steps),
+                "banks_processed": step_result.get("banks_processed", 0),
+                "banks_total": step_result.get("banks_total", 0),
+                "banks_failed": step_result.get("banks_failed", 0),
+            })
+
+        self._current_step = None
+        self._step_index = 0
+        self._total_steps = 0
         return results
 
     async def _run_scout(self, **kwargs: Any) -> dict:

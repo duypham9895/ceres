@@ -64,6 +64,56 @@ class TestCrawlTaskRunner:
         await asyncio.sleep(0.1)
         assert runner.get_current_job() is None
 
+    @pytest.mark.asyncio
+    async def test_step_tracking_during_daily(self):
+        """CrawlTaskRunner tracks current step index during daily pipeline."""
+        db = AsyncMock()
+        runner = CrawlTaskRunner(db=db)
+        broadcasts = []
+        runner.set_broadcast_callback(AsyncMock(side_effect=lambda msg: broadcasts.append(msg)))
+
+        async def fast_stub(**kw):
+            return {"banks_processed": 5, "banks_total": 5, "banks_failed": 0}
+
+        runner._run_scout = fast_stub
+        runner._run_strategist = fast_stub
+        runner._run_crawler = fast_stub
+        runner._run_parser = fast_stub
+
+        await runner.start_job("daily")
+        await asyncio.sleep(0.3)  # Let pipeline complete
+
+        # Check step tracking fields exist on progress broadcasts
+        progress_msgs = [b for b in broadcasts if b["type"] == "job_progress"]
+        assert len(progress_msgs) == 4  # One per completed step
+        for i, msg in enumerate(progress_msgs):
+            assert msg["step_index"] == i
+            assert msg["total_steps"] == 4
+            assert "banks_processed" in msg
+            assert "banks_total" in msg
+
+    @pytest.mark.asyncio
+    async def test_get_current_job_includes_step(self):
+        """get_current_job returns step tracking when daily pipeline is running."""
+        db = AsyncMock()
+        runner = CrawlTaskRunner(db=db)
+        step_reached = asyncio.Event()
+
+        async def slow_scout(**kw):
+            step_reached.set()
+            await asyncio.sleep(10)
+            return {"banks_processed": 0, "banks_total": 0, "banks_failed": 0}
+
+        runner._run_scout = slow_scout
+
+        await runner.start_job("daily")
+        await step_reached.wait()
+
+        current = runner.get_current_job()
+        assert current is not None
+        assert runner.get_step_info() == {"current_step": "scout", "step_index": 0, "total_steps": 4}
+        await runner.cancel_all()
+
     def test_job_is_frozen(self):
         job = CrawlJob(job_id="abc", agent="scout", status=CrawlJobStatus.RUNNING)
         assert job.job_id == "abc"
