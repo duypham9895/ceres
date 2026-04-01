@@ -1,1 +1,53 @@
 @import "tailwindcss";
+
+@theme {
+  /* Elevated dark theme — warm grays with visible layer separation */
+  --color-bg-primary: #1a1b23;
+  --color-bg-card: #22232e;
+  --color-bg-hover: #2c2d3a;
+  --color-border: #333442;
+  --color-border-light: #3d3e4e;
+  --color-text-heading: #f0f0f4;
+  --color-text-body: #d4d4dc;
+  --color-text-secondary: #a8a8b8;
+  --color-text-muted: #7c7c90;
+  --color-text-dim: #5c5c6e;
+  --color-accent: #7c3aed;
+  --color-accent-light: #a78bfa;
+  --color-success: #34d399;
+  --color-success-dim: #6ee7b7;
+  --color-error: #f87171;
+  --color-error-dim: #fca5a5;
+  --color-warning: #fbbf24;
+  --color-warning-dim: #fcd34d;
+  --color-running: #60a5fa;
+  --color-running-dim: #93c5fd;
+  --color-rate-low: color-mix(in srgb, #34d399 12%, transparent);
+  --color-rate-mid: color-mix(in srgb, #fbbf24 12%, transparent);
+  --color-rate-high: color-mix(in srgb, #f87171 12%, transparent);
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+}
+
+body {
+  background: var(--color-bg-primary);
+  color: var(--color-text-body);
+}
+
+@keyframes pulse-green {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+  50% { opacity: 0.8; box-shadow: 0 0 0 4px rgba(34, 197, 94, 0); }
+}
+
+@keyframes pulse-red {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes feed-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-pulse-green { animation: pulse-green 2s infinite; }
+.animate-pulse-red { animation: pulse-red 1.5s infinite; }
+.animate-feed-in { animation: feed-in 0.3s ease; }
