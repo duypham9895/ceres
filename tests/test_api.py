@@ -9,7 +9,7 @@ from ceres.api import create_app
 class TestAppFactory:
     @pytest.mark.asyncio
     async def test_health_check(self):
-        app = create_app()
+        app = create_app(use_lifespan=False)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/status")
@@ -18,7 +18,7 @@ class TestAppFactory:
 
     @pytest.mark.asyncio
     async def test_cors_headers(self):
-        app = create_app()
+        app = create_app(use_lifespan=False)
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.options(
