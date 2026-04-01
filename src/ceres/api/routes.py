@@ -37,21 +37,48 @@ def _error(message: str, *, code: str, status: int) -> JSONResponse:
 
 @router.get("/status")
 async def health_check(request: Request) -> dict:
-    """Return service health status with current crawl job info."""
+    """Return service health status with current crawl job and last completed info."""
     runner = getattr(request.app.state, "task_runner", None)
+    db = getattr(request.app.state, "db", None)
     current_job = runner.get_current_job() if runner else None
+    step_info = runner.get_step_info() if runner else None
+
+    current_job_data = None
+    if current_job is not None:
+        current_job_data = {
+            "job_id": current_job.job_id,
+            "agent": current_job.agent,
+            "status": current_job.status.value if hasattr(current_job.status, 'value') else str(current_job.status),
+            "started_at": current_job.started_at,
+        }
+        if step_info is not None:
+            current_job_data = {**current_job_data, **step_info}
+
+    # Fetch last completed crawl summary (time-window aggregation)
+    last_completed = None
+    if current_job is None and db is not None:
+        row = await db.pool.fetchrow("""
+            WITH latest AS (
+                SELECT created_at FROM crawl_logs ORDER BY created_at DESC LIMIT 1
+            )
+            SELECT
+                MAX(cl.created_at) AS finished_at,
+                COUNT(*) FILTER (WHERE cl.status = 'SUCCESS') AS success_count,
+                COUNT(*) AS total_count
+            FROM crawl_logs cl
+            WHERE cl.created_at >= (SELECT created_at - INTERVAL '30 minutes' FROM latest)
+        """)
+        if row is not None and row["total_count"] is not None and row["total_count"] > 0:
+            last_completed = {
+                "finished_at": row["finished_at"],
+                "success_count": row["success_count"],
+                "total_count": row["total_count"],
+            }
+
     return {
         "status": "ok",
-        "current_job": (
-            {
-                "job_id": current_job.job_id,
-                "agent": current_job.agent,
-                "status": current_job.status.value if hasattr(current_job.status, 'value') else str(current_job.status),
-                "started_at": current_job.started_at,
-            }
-            if current_job
-            else None
-        ),
+        "current_job": current_job_data,
+        "last_completed": last_completed,
     }
 
 
@@ -317,6 +344,77 @@ async def list_recommendations(request: Request) -> dict:
     )
 
     return {"data": [dict(r) for r in rows]}
+
+
+# ------------------------------------------------------------------
+# Rate Intelligence
+# ------------------------------------------------------------------
+
+
+@router.get("/rates/heatmap")
+async def rates_heatmap(request: Request) -> dict:
+    """Rate heatmap: all banks with min interest rates by loan type."""
+    db = request.app.state.db
+
+    rows = await db.pool.fetch(
+        """
+        SELECT b.bank_code, b.bank_name, b.website_status,
+               lp.loan_type, MIN(lp.min_interest_rate) AS min_rate
+        FROM banks b
+        LEFT JOIN loan_programs lp ON lp.bank_id = b.id AND lp.is_latest = true
+        GROUP BY b.bank_code, b.bank_name, b.website_status, lp.loan_type
+        ORDER BY b.bank_code
+        """
+    )
+
+    banks: dict[str, dict] = {}
+    for row in rows:
+        code = row["bank_code"]
+        if code not in banks:
+            banks[code] = {
+                "bank_code": code,
+                "bank_name": row["bank_name"],
+                "website_status": row["website_status"],
+                "rates": {},
+            }
+        if row["loan_type"] and row["min_rate"] is not None:
+            banks[code]["rates"][row["loan_type"]] = float(row["min_rate"])
+
+    return {"banks": list(banks.values())}
+
+
+@router.get("/rates/trend")
+async def rates_trend(
+    request: Request,
+    loan_type: str = Query("KPR"),
+    days: int = Query(7, ge=1, le=30),
+) -> dict:
+    """Daily average min interest rate for a loan type over N days."""
+    db = request.app.state.db
+
+    rows = await db.pool.fetch(
+        """
+        SELECT DATE(lp.updated_at) AS date,
+               AVG(lp.min_interest_rate) AS avg_min_rate
+        FROM loan_programs lp
+        WHERE lp.loan_type = $1
+          AND lp.is_latest = true
+          AND lp.updated_at >= NOW() - make_interval(days => $2)
+          AND lp.min_interest_rate IS NOT NULL
+        GROUP BY DATE(lp.updated_at)
+        ORDER BY date
+        """,
+        loan_type,
+        days,
+    )
+
+    return {
+        "loan_type": loan_type,
+        "series": [
+            {"date": str(r["date"]), "avg_min_rate": float(r["avg_min_rate"])}
+            for r in rows
+        ],
+    }
 
 
 # ------------------------------------------------------------------
