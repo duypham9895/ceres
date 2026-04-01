@@ -70,7 +70,6 @@ class TestCrawlTaskRunner:
         db = AsyncMock()
         runner = CrawlTaskRunner(db=db)
         broadcasts = []
-        runner.set_broadcast_callback(AsyncMock(side_effect=lambda msg: broadcasts.append(msg)))
 
         async def fast_stub(**kw):
             return {"banks_processed": 5, "banks_total": 5, "banks_failed": 0}
@@ -80,8 +79,17 @@ class TestCrawlTaskRunner:
         runner._run_crawler = fast_stub
         runner._run_parser = fast_stub
 
+        done = asyncio.Event()
+
+        async def tracking_broadcast(msg):
+            broadcasts.append(msg)
+            if msg["type"] == "job_finish":
+                done.set()
+
+        runner.set_broadcast_callback(tracking_broadcast)
+
         await runner.start_job("daily")
-        await asyncio.sleep(0.3)  # Let pipeline complete
+        await asyncio.wait_for(done.wait(), timeout=5.0)
 
         # Check step tracking fields exist on progress broadcasts
         progress_msgs = [b for b in broadcasts if b["type"] == "job_progress"]
@@ -94,7 +102,7 @@ class TestCrawlTaskRunner:
 
     @pytest.mark.asyncio
     async def test_get_current_job_includes_step(self):
-        """get_current_job returns step tracking when daily pipeline is running."""
+        """get_step_info returns step tracking when daily pipeline is running."""
         db = AsyncMock()
         runner = CrawlTaskRunner(db=db)
         step_reached = asyncio.Event()

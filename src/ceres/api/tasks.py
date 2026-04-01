@@ -211,7 +211,8 @@ class CrawlTaskRunner:
             ("crawler", self._run_crawler),
             ("parser", self._run_parser),
         ]
-        self._total_steps = len(steps)
+        n_steps = len(steps)
+        self._total_steps = n_steps
 
         for i, (step_name, step_fn) in enumerate(steps):
             self._current_step = step_name
@@ -223,7 +224,7 @@ class CrawlTaskRunner:
                 "agent": "daily",
                 "step": step_name,
                 "step_index": i,
-                "total_steps": len(steps),
+                "total_steps": n_steps,
             })
 
             step_result = await step_fn(**kwargs)
@@ -235,15 +236,12 @@ class CrawlTaskRunner:
                 "agent": "daily",
                 "step": step_name,
                 "step_index": i,
-                "total_steps": len(steps),
+                "total_steps": n_steps,
                 "banks_processed": step_result.get("banks_processed", 0),
                 "banks_total": step_result.get("banks_total", 0),
                 "banks_failed": step_result.get("banks_failed", 0),
             })
 
-        self._current_step = None
-        self._step_index = 0
-        self._total_steps = 0
         return results
 
     async def _run_scout(self, **kwargs: Any) -> dict:
