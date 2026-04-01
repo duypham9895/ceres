@@ -7,3 +7,5 @@ dist/
 .pytest_cache/
 htmlcov/
 screenshots/
+dashboard/node_modules/
+dashboard/dist/
