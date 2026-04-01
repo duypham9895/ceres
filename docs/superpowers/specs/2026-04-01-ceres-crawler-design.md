@@ -404,7 +404,44 @@ Each seeded with: bank_code, bank_name, website_url, bank_category, bank_type.
 
 ---
 
-## 9. Success Criteria
+## 9. Operational Details
+
+### Required Environment Variables
+```
+DATABASE_URL=postgresql://...        # Supabase connection string
+ANTHROPIC_API_KEY=sk-ant-...         # Claude API for LLM parser fallback
+# Optional (v1 stubbed):
+PROXY_API_KEY=                       # ScraperAPI or similar
+CAPTCHA_API_KEY=                     # 2Captcha or similar
+S3_BUCKET=                           # Screenshot/HTML storage
+S3_ACCESS_KEY=
+S3_SECRET_KEY=
+```
+All secrets are validated at startup — missing required vars cause immediate exit with clear error message. Proxy URLs in the `proxies` table must NOT contain embedded credentials; use a separate auth mechanism.
+
+### Raw HTML Handoff (Crawler → Parser)
+Crawler stores raw HTML in a `crawl_raw_data` table:
+- `id` UUID PK
+- `crawl_log_id` UUID FK → crawl_logs
+- `bank_id` UUID FK → banks
+- `page_url` VARCHAR
+- `raw_html` TEXT
+- `extracted_at` TIMESTAMPTZ
+- `parsed` BOOLEAN DEFAULT false
+
+Parser reads unparsed rows, processes them, marks `parsed = true`. This decouples the two agents and supports the 1-hour schedule gap.
+
+### Concurrency Control
+- `bank_strategies` has a UNIQUE constraint on `(bank_id) WHERE is_primary = true AND is_active = true` — only one active primary strategy per bank.
+- Strategy updates use optimistic locking via `version` column: `UPDATE ... WHERE version = $expected_version`. If version mismatch, retry or abort.
+- Crawler loads strategy snapshot at start — mid-crawl updates don't affect in-flight execution.
+
+### Bank Count
+Seed data contains 62 banks. The ~80 target includes banks the Scout agent will discover over time from OJK registry and cross-references. Success criteria is measured against the seed set; coverage grows as Scout finds more.
+
+---
+
+## 10. Success Criteria
 
 1. Can crawl all 62 seed banks (or gracefully handle unreachable ones)
 2. Extracts loan programs with 80%+ completeness score
