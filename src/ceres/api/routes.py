@@ -205,11 +205,41 @@ async def get_bank_detail(request: Request, bank_id: str):
 
     strategy = dict(strategies[0]) if strategies else None
 
+    raw_data_stats = await db.pool.fetchrow(
+        """
+        SELECT
+            COUNT(*) AS total_pages,
+            COUNT(*) FILTER (WHERE parsed = true) AS parsed_pages,
+            COUNT(*) FILTER (WHERE parsed = false) AS unparsed_pages
+        FROM crawl_raw_data
+        WHERE bank_id = $1::uuid
+        """,
+        bid,
+    )
+
+    last_crawl = crawl_logs[0] if crawl_logs else None
+    pipeline_status = {
+        "crawl": {
+            "status": last_crawl["status"] if last_crawl else "never",
+            "pages": raw_data_stats["total_pages"],
+            "last_run": last_crawl["created_at"].isoformat() if last_crawl else None,
+        },
+        "parse": {
+            "total": raw_data_stats["total_pages"],
+            "parsed": raw_data_stats["parsed_pages"],
+            "unparsed": raw_data_stats["unparsed_pages"],
+        },
+        "extract": {
+            "programs": len(programs),
+        },
+    }
+
     return {
         "bank": dict(bank),
         "strategy": strategy,
         "programs": [dict(p) for p in programs],
         "crawl_logs": [dict(cl) for cl in crawl_logs],
+        "pipeline_status": pipeline_status,
     }
 
 

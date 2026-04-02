@@ -25,8 +25,8 @@ interface LoanProgram {
   id: number;
   program_name: string;
   loan_type: string;
-  interest_rate_min: number | null;
-  interest_rate_max: number | null;
+  min_interest_rate: number | null;
+  max_interest_rate: number | null;
   last_updated_at: string;
 }
 
@@ -39,11 +39,18 @@ interface CrawlLog {
   error_message: string | null;
 }
 
+interface PipelineStatus {
+  crawl: { status: 'never' | 'running' | 'success' | 'failed'; pages: number; last_run: string | null };
+  parse: { total: number; parsed: number; unparsed: number };
+  extract: { programs: number };
+}
+
 interface BankDetailData {
   bank: BankInfo;
   strategy: Strategy | null;
   programs: LoanProgram[];
   crawl_logs: CrawlLog[];
+  pipeline_status?: PipelineStatus;
 }
 
 function InfoItem({ label, children }: { label: string; children: React.ReactNode }) {
@@ -53,6 +60,101 @@ function InfoItem({ label, children }: { label: string; children: React.ReactNod
       <dd className="mt-1 text-sm text-text-heading">{children}</dd>
     </div>
   );
+}
+
+type StepState = 'success' | 'error' | 'warning' | 'idle' | 'running';
+
+function PipelineStep({
+  label,
+  state,
+  detail,
+  message,
+}: {
+  label: string;
+  state: StepState;
+  detail: string;
+  message?: string;
+}) {
+  const icons: Record<StepState, string> = {
+    success: '✔',
+    error: '✖',
+    warning: '~',
+    idle: '–',
+    running: '⟳',
+  };
+  const colors: Record<StepState, string> = {
+    success: 'text-green-400',
+    error: 'text-red-400',
+    warning: 'text-amber-400',
+    idle: 'text-text-muted',
+    running: 'text-blue-400 animate-spin inline-block',
+  };
+
+  return (
+    <div className="flex items-start gap-3 py-2">
+      <span className={`text-sm font-bold w-4 shrink-0 ${colors[state]}`}>{icons[state]}</span>
+      <span className="text-sm font-medium text-text-heading w-16 shrink-0">{label}</span>
+      <span className="text-sm text-text-secondary">{detail}</span>
+      {message && <span className="text-sm text-text-muted italic ml-2">{message}</span>}
+    </div>
+  );
+}
+
+function derivePipelineSteps(ps: PipelineStatus): {
+  crawlState: StepState; crawlDetail: string; crawlMsg?: string;
+  parseState: StepState; parseDetail: string; parseMsg?: string;
+  extractState: StepState; extractDetail: string; extractMsg?: string;
+} {
+  const { crawl, parse, extract } = ps;
+
+  // Crawl step
+  const crawlState: StepState =
+    crawl.status === 'never' ? 'idle'
+    : crawl.status === 'running' ? 'running'
+    : crawl.status === 'failed' ? 'error'
+    : 'success';
+  const crawlDetail =
+    crawl.status === 'never' ? 'Never crawled'
+    : crawl.status === 'running' ? 'In progress…'
+    : crawl.status === 'failed' ? `Failed${crawl.last_run ? ` · ${formatDate(crawl.last_run)}` : ''}`
+    : `${crawl.pages} page${crawl.pages !== 1 ? 's' : ''} · ${formatDate(crawl.last_run)}`;
+  const crawlMsg = crawl.status === 'never' ? 'Bank has never been crawled' : undefined;
+
+  // Parse step — only meaningful after a successful crawl
+  const parseReady = crawl.status === 'success' || parse.total > 0;
+  const parseState: StepState =
+    !parseReady ? 'idle'
+    : crawl.status === 'running' ? 'idle'
+    : parse.total === 0 ? 'error'
+    : parse.unparsed === 0 ? 'success'
+    : 'warning';
+  const parseDetail =
+    !parseReady ? '–'
+    : parse.total === 0 ? '0 pages'
+    : `${parse.parsed}/${parse.total} parsed`;
+  const parseMsg =
+    parseState === 'error' ? 'Parser has not run yet'
+    : parseState === 'warning' ? `${parse.unparsed} page${parse.unparsed !== 1 ? 's' : ''} not yet parsed`
+    : undefined;
+
+  // Extract step — only meaningful after parsing
+  const extractReady = parse.parsed > 0;
+  const extractState: StepState =
+    !extractReady ? 'idle'
+    : extract.programs > 0 ? 'success'
+    : 'error';
+  const extractDetail =
+    !extractReady ? '–'
+    : `${extract.programs} program${extract.programs !== 1 ? 's' : ''}`;
+  const extractMsg =
+    extractState === 'error' ? 'LLM returned 0 programs'
+    : undefined;
+
+  return {
+    crawlState, crawlDetail, crawlMsg,
+    parseState, parseDetail, parseMsg,
+    extractState, extractDetail, extractMsg,
+  };
 }
 
 export default function BankDetail() {
@@ -68,7 +170,9 @@ export default function BankDetail() {
   if (isError) return <p className="text-error">Error: {error instanceof Error ? error.message : 'Failed to load bank'}</p>;
   if (!data) return null;
 
-  const { bank, strategy, programs, crawl_logs } = data;
+  const { bank, strategy, programs, crawl_logs, pipeline_status } = data;
+
+  const pipelineSteps = pipeline_status ? derivePipelineSteps(pipeline_status) : null;
 
   return (
     <div className="space-y-6">
@@ -108,6 +212,18 @@ export default function BankDetail() {
         </div>
       )}
 
+      {/* Pipeline Status Card */}
+      {pipelineSteps && (
+        <div className="bg-bg-card rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold text-text-heading mb-3">Pipeline Status</h3>
+          <div className="divide-y divide-border">
+            <PipelineStep label="Crawl" state={pipelineSteps.crawlState} detail={pipelineSteps.crawlDetail} message={pipelineSteps.crawlMsg} />
+            <PipelineStep label="Parse" state={pipelineSteps.parseState} detail={pipelineSteps.parseDetail} message={pipelineSteps.parseMsg} />
+            <PipelineStep label="Extract" state={pipelineSteps.extractState} detail={pipelineSteps.extractDetail} message={pipelineSteps.extractMsg} />
+          </div>
+        </div>
+      )}
+
       {/* Loan Programs Table */}
       <div className="bg-bg-card rounded-lg shadow">
         <div className="px-6 py-4 border-b border-border">
@@ -131,8 +247,8 @@ export default function BankDetail() {
                   <td className="px-4 py-3 text-sm text-text-heading">{program.program_name}</td>
                   <td className="px-4 py-3 text-sm text-text-secondary">{program.loan_type}</td>
                   <td className="px-4 py-3 text-sm font-[var(--font-mono)] text-text-heading">
-                    {program.interest_rate_min != null && program.interest_rate_max != null
-                      ? `${program.interest_rate_min}% - ${program.interest_rate_max}%`
+                    {program.min_interest_rate != null && program.max_interest_rate != null
+                      ? `${program.min_interest_rate}% - ${program.max_interest_rate}%`
                       : '-'}
                   </td>
                   <td className="px-4 py-3 text-sm text-text-secondary">{formatDate(program.last_updated_at)}</td>

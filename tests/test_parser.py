@@ -48,7 +48,7 @@ class TestParserAgent:
         result = await agent.run()
 
         assert result["programs_parsed"] >= 1
-        db.mark_parsed.assert_called_once_with("raw1")
+        db.mark_parsed.assert_called_once_with(raw_data_id="raw1")
 
     @pytest.mark.asyncio
     async def test_llm_fallback_on_low_confidence(self):

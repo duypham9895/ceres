@@ -66,7 +66,10 @@ class TestBanksRoute:
     async def test_get_bank_detail(self):
         db = AsyncMock()
         db.pool = AsyncMock()
-        db.pool.fetchrow = AsyncMock(return_value={"id": "1", "bank_code": "BCA", "bank_name": "BCA"})
+        db.pool.fetchrow = AsyncMock(side_effect=[
+            {"id": "1", "bank_code": "BCA", "bank_name": "BCA"},  # bank lookup
+            {"total_pages": 0, "parsed_pages": 0, "unparsed_pages": 0},  # raw_data_stats
+        ])
         db.pool.fetch = AsyncMock(return_value=[])
         db.fetch_loan_programs = AsyncMock(return_value=[])
         db.fetch_active_strategies = AsyncMock(return_value=[])
@@ -75,7 +78,10 @@ class TestBanksRoute:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/banks/1")
         assert resp.status_code == 200
-        assert resp.json()["bank"]["bank_code"] == "BCA"
+        data = resp.json()
+        assert data["bank"]["bank_code"] == "BCA"
+        assert "pipeline_status" in data
+        assert data["pipeline_status"]["crawl"]["status"] == "never"
 
     @pytest.mark.asyncio
     async def test_get_bank_not_found(self):

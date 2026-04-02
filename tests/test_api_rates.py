@@ -37,11 +37,11 @@ class TestRatesHeatmap:
         db = AsyncMock()
         db.pool = AsyncMock()
         db.pool.fetch = AsyncMock(return_value=[
-            {"bank_code": "BCA", "bank_name": "Bank Central Asia",
+            {"bank_id": "uuid-bca", "bank_code": "BCA", "bank_name": "Bank Central Asia",
              "website_status": "active", "loan_type": "KPR", "min_rate": 7.2},
-            {"bank_code": "BCA", "bank_name": "Bank Central Asia",
+            {"bank_id": "uuid-bca", "bank_code": "BCA", "bank_name": "Bank Central Asia",
              "website_status": "active", "loan_type": "KPA", "min_rate": 8.5},
-            {"bank_code": "BRI", "bank_name": "Bank Rakyat Indonesia",
+            {"bank_id": "uuid-bri", "bank_code": "BRI", "bank_name": "Bank Rakyat Indonesia",
              "website_status": "active", "loan_type": "KPR", "min_rate": 6.9},
         ])
 
@@ -87,7 +87,7 @@ class TestRatesHeatmap:
         db = AsyncMock()
         db.pool = AsyncMock()
         db.pool.fetch = AsyncMock(return_value=[
-            {"bank_code": "MEGA", "bank_name": "Bank Mega",
+            {"bank_id": "uuid-mega", "bank_code": "MEGA", "bank_name": "Bank Mega",
              "website_status": "blocked", "loan_type": None, "min_rate": None},
         ])
 
