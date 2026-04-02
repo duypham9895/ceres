@@ -13,17 +13,29 @@ manager = ConnectionManager()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Application lifespan: initialise DB, task runner, and broadcast wiring."""
+    """Application lifespan: initialise DB, task runner, arq pool, and pub/sub bridge."""
+    from arq import create_pool
+    from arq.connections import RedisSettings
+
     from ceres.api.tasks import CrawlTaskRunner
     from ceres.config import load_config
     from ceres.database import Database
+    from ceres.pubsub import PubSubBridge
 
     config = load_config()
     db = Database(config.database_url)
     await db.connect()
 
-    task_runner = CrawlTaskRunner(db=db, config=config)
+    arq_pool = await create_pool(RedisSettings.from_dsn(config.redis_url))
+
+    task_runner = CrawlTaskRunner(db=db, config=config, arq_pool=arq_pool)
     task_runner.set_broadcast_callback(manager.broadcast)
+
+    pubsub_bridge = PubSubBridge(
+        redis_url=config.redis_url,
+        broadcast=manager.broadcast,
+    )
+    await pubsub_bridge.start()
 
     app.state.db = db
     app.state.config = config
@@ -31,7 +43,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     yield
 
+    await pubsub_bridge.stop()
     await task_runner.cancel_all()
+    await arq_pool.close()
     await db.disconnect()
 
 
