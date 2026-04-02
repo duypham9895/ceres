@@ -96,6 +96,7 @@ class CrawlerAgent(BaseAgent):
 
         bank_stats = {"banks_crawled": 0, "pages_fetched": 0, "failures": 0}
         anti_bot_detected = False
+        last_error: Optional[str] = None
 
         try:
             for url in loan_page_urls:
@@ -125,12 +126,23 @@ class CrawlerAgent(BaseAgent):
                 except Exception as exc:
                     self.logger.error(f"Failed to crawl {url}: {exc}")
                     bank_stats["failures"] += 1
+                    last_error = f"{url}: {exc}"
 
             status = "failed" if bank_stats["failures"] > 0 else "success"
             if bank_stats["pages_fetched"] > 0:
                 bank_stats["banks_crawled"] = 1
-        except BaseException:
+            error_info: dict = {}
+            if last_error and status == "failed":
+                error_info = {
+                    "error_type": "CrawlError",
+                    "error_message": last_error[:500],
+                }
+        except BaseException as exc:
             status = "failed"
+            error_info = {
+                "error_type": type(exc).__name__,
+                "error_message": str(exc)[:500],
+            }
             self.logger.exception(f"Crawl crashed for {bank_code}")
 
         try:
@@ -138,6 +150,7 @@ class CrawlerAgent(BaseAgent):
                 crawl_log_id=crawl_log_id,
                 status=status,
                 pages_crawled=bank_stats["pages_fetched"],
+                **error_info,
             )
             await self.db.update_strategy_success_rate(
                 strategy_id=str(strategy_id),
