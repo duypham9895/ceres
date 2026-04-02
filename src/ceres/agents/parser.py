@@ -62,7 +62,7 @@ class ParserAgent(BaseAgent):
                 for program in programs:
                     await self.db.upsert_loan_program(**program)
                     programs_parsed += 1
-                await self.db.mark_parsed(raw["id"])
+                await self.db.mark_parsed(raw_data_id=str(raw["id"]))
             except Exception as exc:
                 error_msg = f"Failed to parse raw_id={raw['id']}: {exc}"
                 logger.error(error_msg)
