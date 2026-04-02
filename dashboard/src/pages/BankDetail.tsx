@@ -215,7 +215,12 @@ export default function BankDetail() {
       {/* Pipeline Status Card */}
       {pipelineSteps && (
         <div className="bg-bg-card rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-text-heading mb-3">Pipeline Status</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold text-text-heading">Pipeline Status</h3>
+            {pipelineSteps.parseState === 'success' && pipelineSteps.extractState === 'error' && (
+              <CrawlButton agent="parser" label="Re-parse" bank={bank.bank_code} variant="secondary" />
+            )}
+          </div>
           <div className="divide-y divide-border">
             <PipelineStep label="Crawl" state={pipelineSteps.crawlState} detail={pipelineSteps.crawlDetail} message={pipelineSteps.crawlMsg} />
             <PipelineStep label="Parse" state={pipelineSteps.parseState} detail={pipelineSteps.parseDetail} message={pipelineSteps.parseMsg} />

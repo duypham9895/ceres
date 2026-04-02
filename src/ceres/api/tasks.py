@@ -287,7 +287,7 @@ class CrawlTaskRunner:
     # ------------------------------------------------------------------
 
     async def _run_daily(self, **kwargs: Any) -> dict:
-        """Run the full daily pipeline: scout -> strategist -> crawler -> parser."""
+        """Run the full daily pipeline: scout -> strategist -> crawler (+ parse) -> learning."""
         job_id = self._current_job.job_id if self._current_job else ""
         results: Dict[str, Any] = {}
 
@@ -295,7 +295,6 @@ class CrawlTaskRunner:
             ("scout", self._run_scout),
             ("strategist", self._run_strategist),
             ("crawler", self._run_crawler),
-            ("parser", self._run_parser),
             ("learning", self._run_learning),
         ]
         n_steps = len(steps)

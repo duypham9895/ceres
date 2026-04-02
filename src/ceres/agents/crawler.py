@@ -7,7 +7,6 @@ import json
 from typing import Any, Optional
 
 from ceres.agents.base import BaseAgent
-from ceres.agents.parser import ParserAgent
 from ceres.browser.manager import BrowserManager, BrowserType
 from ceres.browser.stealth import detect_anti_bot
 from ceres.database import Database
@@ -74,15 +73,6 @@ class CrawlerAgent(BaseAgent):
             f"Crawl complete: {stats['banks_crawled']} banks, "
             f"{stats['pages_fetched']} pages, {stats['failures']} failures"
         )
-
-        if stats["pages_fetched"] > 0:
-            self.logger.info("Starting parser for newly crawled pages")
-            parse_stats = await ParserAgent(db=self.db).run(bank_code=bank_code)
-            stats["programs_parsed"] = parse_stats.get("programs_parsed", 0)
-            self.logger.info(f"Parser complete: {stats['programs_parsed']} programs extracted")
-        else:
-            stats["programs_parsed"] = 0
-
         return stats
 
     async def _crawl_bank(self, strategy: dict) -> dict:

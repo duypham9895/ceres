@@ -77,7 +77,6 @@ class TestCrawlTaskRunner:
         runner._run_scout = fast_stub
         runner._run_strategist = fast_stub
         runner._run_crawler = fast_stub
-        runner._run_parser = fast_stub
         runner._run_learning = fast_stub
 
         done = asyncio.Event()
@@ -94,10 +93,10 @@ class TestCrawlTaskRunner:
 
         # Check step tracking fields exist on progress broadcasts
         progress_msgs = [b for b in broadcasts if b["type"] == "job_progress"]
-        assert len(progress_msgs) == 5  # One per completed step (including learning)
+        assert len(progress_msgs) == 4  # scout, strategist, crawler, learning
         for i, msg in enumerate(progress_msgs):
             assert msg["step_index"] == i
-            assert msg["total_steps"] == 5
+            assert msg["total_steps"] == 4
             assert "banks_processed" in msg
             assert "banks_total" in msg
 
@@ -120,7 +119,7 @@ class TestCrawlTaskRunner:
 
         current = runner.get_current_job()
         assert current is not None
-        assert runner.get_step_info() == {"current_step": "scout", "step_index": 0, "total_steps": 5}
+        assert runner.get_step_info() == {"current_step": "scout", "step_index": 0, "total_steps": 4}
         await runner.cancel_all()
 
     @pytest.mark.asyncio
@@ -227,7 +226,6 @@ class TestCrawlTaskRunner:
         runner._run_scout = stub
         runner._run_strategist = stub
         runner._run_crawler = stub
-        runner._run_parser = stub
         runner._run_learning = stub
 
         done = asyncio.Event()
@@ -243,7 +241,7 @@ class TestCrawlTaskRunner:
         await asyncio.wait_for(done.wait(), timeout=5.0)
 
         assert "learning" in step_names
-        assert step_names == ["scout", "strategist", "crawler", "parser", "learning"]
+        assert step_names == ["scout", "strategist", "crawler", "learning"]
 
     def test_job_is_frozen(self):
         job = CrawlJob(job_id="abc", agent="scout", status=CrawlJobStatus.RUNNING)
