@@ -138,7 +138,7 @@ class ParserAgent(BaseAgent):
         min_tenure, max_tenure = normalize_tenure(fields.get("tenure", "") or "")
 
         program = {
-            "bank_id": raw["bank_id"],
+            "bank_id": str(raw["bank_id"]),
             "program_name": name,
             "loan_type": loan_type,
             "source_url": raw["page_url"],
@@ -171,7 +171,7 @@ class ParserAgent(BaseAgent):
             return None
 
         program = {
-            "bank_id": raw["bank_id"],
+            "bank_id": str(raw["bank_id"]),
             "program_name": program_name,
             "loan_type": prog_data.get("loan_type", "OTHER"),
             "source_url": raw["page_url"],

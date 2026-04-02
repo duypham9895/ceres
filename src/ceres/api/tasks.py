@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import enum
 import logging
+import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -158,6 +159,14 @@ class CrawlTaskRunner:
         **kwargs: Any,
     ) -> None:
         """Run an agent function with broadcasting and cleanup."""
+        # Log agent run start (guarded — logging failure must not crash the agent)
+        run_id: Optional[str] = None
+        try:
+            run_row = await self._db.log_agent_start(agent_name=agent)
+            run_id = str(run_row["id"])
+        except Exception:
+            logger.warning("Failed to log agent start for %s", agent)
+
         await self._broadcast(
             {"type": "job_start", "job_id": job_id, "agent": agent},
         )
@@ -171,6 +180,13 @@ class CrawlTaskRunner:
                     "result": result,
                 },
             )
+            if run_id is not None:
+                try:
+                    await self._db.log_agent_finish(
+                        run_id=run_id, result=result,
+                    )
+                except Exception:
+                    logger.warning("Failed to log agent finish for %s", agent)
         except Exception as exc:
             logger.exception("Job %s failed: %s", job_id, exc)
             await self._broadcast(
@@ -181,6 +197,13 @@ class CrawlTaskRunner:
                     "error": str(exc),
                 },
             )
+            if run_id is not None:
+                try:
+                    await self._db.log_agent_error(
+                        run_id=run_id, error_message=str(exc),
+                    )
+                except Exception:
+                    logger.warning("Failed to log agent error for %s", agent)
         finally:
             self._current_job = None
             self._current_task = None
@@ -239,6 +262,7 @@ class CrawlTaskRunner:
             ("strategist", self._run_strategist),
             ("crawler", self._run_crawler),
             ("parser", self._run_parser),
+            ("learning", self._run_learning),
         ]
         n_steps = len(steps)
         self._total_steps = n_steps
@@ -294,8 +318,19 @@ class CrawlTaskRunner:
 
     async def _run_parser(self, **kwargs: Any) -> dict:
         from ceres.agents.parser import ParserAgent
+        from ceres.extractors.llm import ClaudeLLMExtractor
 
-        agent = ParserAgent(db=self._db, config=self._config)
+        llm_extractor = None
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if api_key:
+            import anthropic
+
+            client = anthropic.AsyncAnthropic(api_key=api_key)
+            llm_extractor = ClaudeLLMExtractor(client=client)
+
+        agent = ParserAgent(
+            db=self._db, config=self._config, llm_extractor=llm_extractor,
+        )
         return await agent.execute(**kwargs)
 
     async def _run_learning(self, **kwargs: Any) -> dict:
