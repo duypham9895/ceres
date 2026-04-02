@@ -86,8 +86,8 @@ class CrawlerAgent(BaseAgent):
         rate_limiter = RateLimiter(delay_ms=strategy["rate_limit_ms"])
 
         log_id = await self.db.create_crawl_log(
+            bank_id=strategy["bank_id"],
             strategy_id=strategy_id,
-            bank_code=bank_code,
             status="running",
         )
 
@@ -111,10 +111,10 @@ class CrawlerAgent(BaseAgent):
                     )
 
                 await self.db.store_raw_html(
-                    strategy_id=strategy_id,
-                    url=url,
-                    html=html,
-                    bank_code=bank_code,
+                    crawl_log_id=log_id,
+                    bank_id=strategy["bank_id"],
+                    page_url=url,
+                    raw_html=html,
                 )
                 bank_stats["pages_fetched"] += 1
 
@@ -127,10 +127,9 @@ class CrawlerAgent(BaseAgent):
             bank_stats["banks_crawled"] = 1
 
         await self.db.update_crawl_log(
-            log_id=log_id,
+            crawl_log_id=log_id,
             status=status,
-            pages_fetched=bank_stats["pages_fetched"],
-            anti_bot_detected=anti_bot_detected,
+            pages_crawled=bank_stats["pages_fetched"],
         )
 
         return bank_stats
