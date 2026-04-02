@@ -295,6 +295,7 @@ class CrawlTaskRunner:
             ("scout", self._run_scout),
             ("strategist", self._run_strategist),
             ("crawler", self._run_crawler),
+            ("parser", self._run_parser),
             ("learning", self._run_learning),
         ]
         n_steps = len(steps)
