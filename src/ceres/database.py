@@ -297,30 +297,10 @@ class Database:
         )
 
     async def fetch_unparsed_html(
-        self, *, bank_id: Optional[str] = None
+        self, *, bank_id: Optional[str] = None, bank_code: Optional[str] = None
     ) -> list[dict[str, Any]]:
         """Fetch unparsed HTML rows joined with bank info and strategy selectors."""
-        if bank_id is not None:
-            return await self.pool.fetch(
-                """
-                SELECT
-                    crd.*,
-                    b.bank_code,
-                    b.bank_name,
-                    bs.selectors
-                FROM crawl_raw_data crd
-                JOIN banks b ON b.id = crd.bank_id
-                LEFT JOIN bank_strategies bs
-                    ON bs.bank_id = crd.bank_id
-                    AND bs.is_active = true
-                    AND bs.is_primary = true
-                WHERE crd.parsed = false AND crd.bank_id = $1::uuid
-                ORDER BY crd.created_at
-                """,
-                bank_id,
-            )
-        return await self.pool.fetch(
-            """
+        base_query = """
             SELECT
                 crd.*,
                 b.bank_code,
@@ -333,9 +313,18 @@ class Database:
                 AND bs.is_active = true
                 AND bs.is_primary = true
             WHERE crd.parsed = false
-            ORDER BY crd.created_at
-            """
-        )
+        """
+        if bank_id is not None:
+            return await self.pool.fetch(
+                base_query + " AND crd.bank_id = $1::uuid ORDER BY crd.created_at",
+                bank_id,
+            )
+        if bank_code is not None:
+            return await self.pool.fetch(
+                base_query + " AND b.bank_code = $1 ORDER BY crd.created_at",
+                bank_code,
+            )
+        return await self.pool.fetch(base_query + " ORDER BY crd.created_at")
 
     async def mark_parsed(self, *, raw_data_id: str) -> None:
         """Mark a raw data row as parsed."""

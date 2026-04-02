@@ -52,7 +52,7 @@ class ParserAgent(BaseAgent):
         Returns:
             Stats dict with programs_parsed count and any errors.
         """
-        rows = await self.db.fetch_unparsed_html()
+        rows = await self.db.fetch_unparsed_html(bank_code=bank_code)
         print(f"[parser] Found {len(rows)} unparsed rows, llm_extractor={self._llm_extractor is not None}", flush=True)
         programs_parsed = 0
         errors: list[str] = []
