@@ -50,9 +50,11 @@ class CrawlTaskRunner:
         self,
         db: Any,
         config: Optional[Any] = None,
+        arq_pool: Optional[Any] = None,
     ) -> None:
         self._db = db
         self._config = config
+        self._arq_pool = arq_pool
         self._lock = asyncio.Lock()
         self._current_job: Optional[CrawlJob] = None
         self._current_task: Optional[asyncio.Task] = None
@@ -89,11 +91,43 @@ class CrawlTaskRunner:
         self,
         agent: str,
         bank_code: Optional[str] = None,
+        force: bool = False,
     ) -> Optional[CrawlJob]:
-        """Start a crawl job if none is currently running.
+        """Start a crawl job, dispatching to arq or running in-process.
 
-        Returns the ``CrawlJob`` on success or ``None`` when blocked.
+        When an ``arq_pool`` was provided at construction time the job is
+        enqueued to the distributed worker and returned immediately with
+        ``QUEUED`` status.  Otherwise the legacy single-concurrency
+        in-process path is used (returns ``None`` when blocked).
         """
+        if self._arq_pool is not None:
+            return await self._enqueue_job(agent, bank_code=bank_code, force=force)
+        return await self._start_job_inprocess(agent, bank_code=bank_code, force=force)
+
+    async def _enqueue_job(
+        self,
+        agent: str,
+        bank_code: Optional[str] = None,
+        force: bool = False,
+    ) -> CrawlJob:
+        """Enqueue a job to arq. No concurrency gate."""
+        job_id = str(uuid.uuid4())
+        await self._arq_pool.enqueue_job(
+            "run_agent_task",
+            job_id=job_id,
+            agent_name=agent,
+            bank_code=bank_code,
+            force=force,
+        )
+        return CrawlJob(job_id=job_id, agent=agent, status=CrawlJobStatus.QUEUED)
+
+    async def _start_job_inprocess(
+        self,
+        agent: str,
+        bank_code: Optional[str] = None,
+        force: bool = False,
+    ) -> Optional[CrawlJob]:
+        """Run a job in-process with single-concurrency lock (legacy fallback)."""
         async with self._lock:
             if self._current_job is not None:
                 return None
@@ -261,7 +295,6 @@ class CrawlTaskRunner:
             ("scout", self._run_scout),
             ("strategist", self._run_strategist),
             ("crawler", self._run_crawler),
-            ("parser", self._run_parser),
             ("learning", self._run_learning),
         ]
         n_steps = len(steps)
@@ -311,10 +344,18 @@ class CrawlTaskRunner:
         return await agent.execute(**kwargs)
 
     async def _run_crawler(self, **kwargs: Any) -> dict:
+        """Crawl pages then immediately parse them with the LLM extractor."""
         from ceres.agents.crawler import CrawlerAgent
 
-        agent = CrawlerAgent(db=self._db, config=self._config)
-        return await agent.execute(**kwargs)
+        crawl_result = await CrawlerAgent(db=self._db, config=self._config).execute(**kwargs)
+
+        if crawl_result.get("pages_fetched", 0) > 0:
+            parse_result = await self._run_parser(**kwargs)
+            crawl_result["programs_parsed"] = parse_result.get("programs_parsed", 0)
+        else:
+            crawl_result["programs_parsed"] = 0
+
+        return crawl_result
 
     async def _run_parser(self, **kwargs: Any) -> dict:
         from ceres.agents.parser import ParserAgent

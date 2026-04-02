@@ -248,3 +248,52 @@ class TestCrawlTaskRunner:
     def test_job_is_frozen(self):
         job = CrawlJob(job_id="abc", agent="scout", status=CrawlJobStatus.RUNNING)
         assert job.job_id == "abc"
+
+    @pytest.mark.asyncio
+    async def test_start_job_enqueues_to_arq(self):
+        """start_job should enqueue an arq job when arq_pool is provided."""
+        db = AsyncMock()
+        mock_pool = AsyncMock()
+        mock_pool.enqueue_job = AsyncMock(return_value=MagicMock(job_id="arq-job-1"))
+        runner = CrawlTaskRunner(db=db, arq_pool=mock_pool)
+
+        job = await runner.start_job("strategist", bank_code="bca")
+        assert job is not None
+        assert job.agent == "strategist"
+        assert job.status == CrawlJobStatus.QUEUED
+
+        mock_pool.enqueue_job.assert_called_once()
+        call_kwargs = mock_pool.enqueue_job.call_args.kwargs
+        assert call_kwargs["agent_name"] == "strategist"
+        assert call_kwargs["bank_code"] == "bca"
+
+    @pytest.mark.asyncio
+    async def test_start_job_allows_concurrent_when_using_queue(self):
+        """Multiple jobs should be accepted when using arq queue."""
+        db = AsyncMock()
+        mock_pool = AsyncMock()
+        mock_pool.enqueue_job = AsyncMock(return_value=MagicMock(job_id="arq-1"))
+        runner = CrawlTaskRunner(db=db, arq_pool=mock_pool)
+
+        job1 = await runner.start_job("strategist", bank_code="bca")
+        job2 = await runner.start_job("strategist", bank_code="bni")
+        assert job1 is not None
+        assert job2 is not None
+        assert mock_pool.enqueue_job.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_inprocess_fallback_still_blocks_concurrent(self):
+        """Without arq_pool, the old single-concurrency behavior should still work."""
+        db = AsyncMock()
+        runner = CrawlTaskRunner(db=db)  # No arq_pool
+
+        async def slow(**kw):
+            await asyncio.sleep(10)
+            return {}
+
+        runner._agent_registry["test"] = slow
+        job1 = await runner.start_job("test")
+        assert job1 is not None
+        job2 = await runner.start_job("test")
+        assert job2 is None  # Blocked
+        await runner.cancel_all()
