@@ -18,7 +18,8 @@ dependencies = [
     "cssselect (>=1.4.0,<2.0.0)",
     "fastapi (>=0.135.2,<0.136.0)",
     "uvicorn[standard] (>=0.42.0,<0.43.0)",
-    "websockets (>=16.0,<17.0)"
+    "websockets (>=16.0,<17.0)",
+    "openai (>=2.30.0,<3.0.0)"
 ]
 
 [project.scripts]

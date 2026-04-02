@@ -84,6 +84,40 @@ class ClaudeLLMExtractor(LLMExtractor):
             return {"programs": [], "error": "Failed to parse LLM response"}
 
 
+class MiniMaxLLMExtractor(LLMExtractor):
+    """Extracts loan data from HTML using MiniMax API (OpenAI-compatible)."""
+
+    MINIMAX_BASE_URL = "https://api.minimaxi.chat/v1"
+    DEFAULT_MODEL = "MiniMax-M1-80k"
+
+    def __init__(
+        self, api_key: str, model: str | None = None, base_url: str | None = None
+    ) -> None:
+        from openai import AsyncOpenAI
+
+        self._client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url or self.MINIMAX_BASE_URL,
+        )
+        self._model = model or self.DEFAULT_MODEL
+
+    async def extract_loan_data(self, html: str, bank_name: str) -> dict[str, Any]:
+        """Extract loan program data from HTML via MiniMax API."""
+        truncated_html = html[:MAX_HTML_LENGTH]
+        prompt = EXTRACTION_PROMPT.format(bank_name=bank_name, html=truncated_html)
+
+        try:
+            response = await self._client.chat.completions.create(
+                model=self._model,
+                max_tokens=4096,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw_text = response.choices[0].message.content or ""
+            return _parse_json_response(raw_text)
+        except Exception:
+            return {"programs": [], "error": "Failed to call MiniMax API"}
+
+
 def _parse_json_response(text: str) -> dict[str, Any]:
     """Parse JSON from LLM response text.
 

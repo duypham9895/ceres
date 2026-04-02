@@ -318,14 +318,20 @@ class CrawlTaskRunner:
 
     async def _run_parser(self, **kwargs: Any) -> dict:
         from ceres.agents.parser import ParserAgent
-        from ceres.extractors.llm import ClaudeLLMExtractor
+        from ceres.extractors.llm import ClaudeLLMExtractor, MiniMaxLLMExtractor
 
         llm_extractor = None
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if api_key:
+
+        # Try MiniMax first (primary), then Anthropic as fallback
+        minimax_key = os.environ.get("MINIMAX_API_KEY")
+        anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+
+        if minimax_key:
+            llm_extractor = MiniMaxLLMExtractor(api_key=minimax_key)
+        elif anthropic_key:
             import anthropic
 
-            client = anthropic.AsyncAnthropic(api_key=api_key)
+            client = anthropic.AsyncAnthropic(api_key=anthropic_key)
             llm_extractor = ClaudeLLMExtractor(client=client)
 
         agent = ParserAgent(
