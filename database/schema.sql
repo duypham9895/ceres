@@ -207,4 +207,18 @@ CREATE TRIGGER proxies_updated_at
     BEFORE UPDATE ON proxies
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+-- 9. Agent Runs (observability tracking)
+CREATE TABLE agent_runs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    agent_name VARCHAR(50) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'running',
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    finished_at TIMESTAMPTZ,
+    error_message TEXT,
+    result JSONB,
+    rows_written INTEGER DEFAULT 0
+);
+
+CREATE INDEX idx_agent_runs_agent_name ON agent_runs(agent_name, started_at DESC);
+
 CREATE INDEX idx_proxies_status ON proxies(status);

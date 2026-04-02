@@ -17,11 +17,30 @@ export interface CrawlEvent {
   result?: Record<string, unknown>;
 }
 
+const SESSION_KEY = 'ceres-event-buffer';
+
+function loadEventBuffer(): CrawlEvent[] {
+  try {
+    const stored = sessionStorage.getItem(SESSION_KEY);
+    return stored ? (JSON.parse(stored) as CrawlEvent[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveEventBuffer(events: CrawlEvent[]): void {
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(events));
+  } catch {
+    // sessionStorage unavailable — ignore
+  }
+}
+
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const queryClient = useQueryClient();
   const [lastEvent, setLastEvent] = useState<CrawlEvent | null>(null);
-  const [eventBuffer, setEventBuffer] = useState<CrawlEvent[]>([]);
+  const [eventBuffer, setEventBuffer] = useState<CrawlEvent[]>(loadEventBuffer);
   const [isConnected, setIsConnected] = useState(false);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -38,7 +57,11 @@ export function useWebSocket() {
       const data = JSON.parse(event.data) as CrawlEvent;
       if (data.type) {
         setLastEvent(data);
-        setEventBuffer((prev) => [data, ...prev].slice(0, 20));
+        setEventBuffer((prev) => {
+          const next = [data, ...prev].slice(0, 20);
+          saveEventBuffer(next);
+          return next;
+        });
       }
       if (data.type === 'job_finish' || data.type === 'job_error') {
         queryClient.invalidateQueries();
@@ -47,7 +70,6 @@ export function useWebSocket() {
 
     ws.onclose = () => {
       setIsConnected(false);
-      setEventBuffer([]);
       reconnectTimer.current = setTimeout(connect, 3000);
     };
   }, [queryClient]);

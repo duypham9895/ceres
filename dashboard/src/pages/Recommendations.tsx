@@ -1,6 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '../api/client';
-import { formatShortDate } from '../utils/format';
+import { formatShortDate, formatShortDateTime } from '../utils/format';
+import CrawlButton from '../components/CrawlButton';
+
+interface AgentRun {
+  readonly agent_name: string;
+  readonly status: string;
+  readonly started_at: string;
+  readonly finished_at: string | null;
+  readonly error_message: string | null;
+}
 
 interface Recommendation {
   readonly id: string;
@@ -69,6 +78,12 @@ export default function Recommendations() {
     queryFn: () => apiFetch<{ data: Recommendation[] }>('/api/recommendations').then(r => r.data),
   });
 
+  const { data: agentRuns } = useQuery({
+    queryKey: ['agent-runs-latest'],
+    queryFn: () => apiFetch<{ data: AgentRun[] }>('/api/agent-runs/latest').then(r => r.data),
+    enabled: !data || data.length === 0,
+  });
+
   if (isLoading) return <p className="text-text-muted">Loading recommendations...</p>;
 
   if (error) {
@@ -80,10 +95,32 @@ export default function Recommendations() {
   }
 
   if (!data || data.length === 0) {
+    const lastRun = agentRuns?.find(r => r.agent_name === 'learning');
     return (
       <div>
         <h2 className="text-2xl font-bold text-text-heading mb-6">Recommendations</h2>
-        <p className="text-text-muted">No recommendations yet. Run the Learning agent to generate insights.</p>
+        <div className="bg-bg-card rounded-lg border border-border p-6">
+          <p className="text-text-muted mb-3">No recommendations yet.</p>
+          {lastRun ? (
+            <div className="text-sm space-y-1 mb-4">
+              <p className="text-text-secondary">
+                Last learning run:{' '}
+                <span className={lastRun.status === 'success' ? 'text-success' : lastRun.status === 'failed' ? 'text-error' : 'text-warning'}>
+                  {lastRun.status.toUpperCase()}
+                </span>
+                {' '}at {formatShortDateTime(lastRun.started_at)}
+              </p>
+              {lastRun.error_message && (
+                <p className="text-error text-xs font-[var(--font-mono)]">
+                  Error: {lastRun.error_message}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-text-dim text-sm mb-4">Learning agent has never been run.</p>
+          )}
+          <CrawlButton agent="learning" label="Run Learning" />
+        </div>
       </div>
     );
   }

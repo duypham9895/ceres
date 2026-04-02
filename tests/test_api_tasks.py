@@ -78,6 +78,7 @@ class TestCrawlTaskRunner:
         runner._run_strategist = fast_stub
         runner._run_crawler = fast_stub
         runner._run_parser = fast_stub
+        runner._run_learning = fast_stub
 
         done = asyncio.Event()
 
@@ -93,10 +94,10 @@ class TestCrawlTaskRunner:
 
         # Check step tracking fields exist on progress broadcasts
         progress_msgs = [b for b in broadcasts if b["type"] == "job_progress"]
-        assert len(progress_msgs) == 4  # One per completed step
+        assert len(progress_msgs) == 5  # One per completed step (including learning)
         for i, msg in enumerate(progress_msgs):
             assert msg["step_index"] == i
-            assert msg["total_steps"] == 4
+            assert msg["total_steps"] == 5
             assert "banks_processed" in msg
             assert "banks_total" in msg
 
@@ -119,8 +120,130 @@ class TestCrawlTaskRunner:
 
         current = runner.get_current_job()
         assert current is not None
-        assert runner.get_step_info() == {"current_step": "scout", "step_index": 0, "total_steps": 4}
+        assert runner.get_step_info() == {"current_step": "scout", "step_index": 0, "total_steps": 5}
         await runner.cancel_all()
+
+    @pytest.mark.asyncio
+    async def test_execute_logs_agent_start_and_finish(self):
+        """_execute() calls log_agent_start before and log_agent_finish after the agent runs."""
+        db = AsyncMock()
+        db.log_agent_start = AsyncMock(return_value={"id": "run-123"})
+        db.log_agent_finish = AsyncMock()
+        db.log_agent_error = AsyncMock()
+        runner = CrawlTaskRunner(db=db)
+        done = asyncio.Event()
+
+        async def fast_agent(**kw):
+            return {"result": "ok"}
+
+        runner._agent_registry["test"] = fast_agent
+
+        async def on_broadcast(msg):
+            if msg["type"] == "job_finish":
+                done.set()
+
+        runner.set_broadcast_callback(on_broadcast)
+        await runner.start_job("test")
+        await asyncio.wait_for(done.wait(), timeout=5.0)
+
+        db.log_agent_start.assert_called_once_with(agent_name="test")
+        db.log_agent_finish.assert_called_once()
+        finish_kwargs = db.log_agent_finish.call_args.kwargs
+        assert finish_kwargs["run_id"] == "run-123"
+        assert finish_kwargs["result"] == {"result": "ok"}
+
+    @pytest.mark.asyncio
+    async def test_execute_logs_agent_error_on_failure(self):
+        """_execute() calls log_agent_error when the agent throws."""
+        db = AsyncMock()
+        db.log_agent_start = AsyncMock(return_value={"id": "run-456"})
+        db.log_agent_finish = AsyncMock()
+        db.log_agent_error = AsyncMock()
+        runner = CrawlTaskRunner(db=db)
+        done = asyncio.Event()
+
+        async def failing_agent(**kw):
+            raise RuntimeError("bank timeout")
+
+        runner._agent_registry["test"] = failing_agent
+
+        async def on_broadcast(msg):
+            if msg["type"] == "job_error":
+                done.set()
+
+        runner.set_broadcast_callback(on_broadcast)
+        await runner.start_job("test")
+        await asyncio.wait_for(done.wait(), timeout=5.0)
+
+        db.log_agent_start.assert_called_once_with(agent_name="test")
+        db.log_agent_error.assert_called_once()
+        error_kwargs = db.log_agent_error.call_args.kwargs
+        assert error_kwargs["run_id"] == "run-456"
+        assert "bank timeout" in error_kwargs["error_message"]
+        db.log_agent_finish.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_logging_failure_does_not_crash_agent(self):
+        """If log_agent_start raises, the agent should still run and complete."""
+        db = AsyncMock()
+        db.log_agent_start = AsyncMock(side_effect=Exception("DB pool exhausted"))
+        db.log_agent_finish = AsyncMock()
+        db.log_agent_error = AsyncMock()
+        runner = CrawlTaskRunner(db=db)
+        done = asyncio.Event()
+        captured_result = {}
+
+        async def fast_agent(**kw):
+            return {"status": "ok"}
+
+        runner._agent_registry["test"] = fast_agent
+
+        async def on_broadcast(msg):
+            if msg["type"] == "job_finish":
+                captured_result.update(msg.get("result", {}))
+                done.set()
+
+        runner.set_broadcast_callback(on_broadcast)
+        await runner.start_job("test")
+        await asyncio.wait_for(done.wait(), timeout=5.0)
+
+        # Agent ran successfully despite logging failure
+        assert captured_result["status"] == "ok"
+        # log_agent_finish should NOT be called since run_id is None
+        db.log_agent_finish.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_daily_pipeline_includes_learning(self):
+        """Daily pipeline should include the learning step."""
+        db = AsyncMock()
+        db.log_agent_start = AsyncMock(return_value={"id": "run-daily"})
+        db.log_agent_finish = AsyncMock()
+        runner = CrawlTaskRunner(db=db)
+        step_names = []
+
+        async def stub(**kw):
+            return {"banks_processed": 1, "banks_total": 1, "banks_failed": 0}
+
+        runner._run_scout = stub
+        runner._run_strategist = stub
+        runner._run_crawler = stub
+        runner._run_parser = stub
+        runner._run_learning = stub
+
+        done = asyncio.Event()
+
+        async def tracking_broadcast(msg):
+            if msg["type"] == "job_step_start":
+                step_names.append(msg["step"])
+            if msg["type"] == "job_finish":
+                done.set()
+
+        runner.set_broadcast_callback(tracking_broadcast)
+        await runner.start_job("daily")
+        await asyncio.wait_for(done.wait(), timeout=5.0)
+
+        assert "learning" in step_names
+        assert step_names == ["scout", "strategist", "crawler", "parser", "learning"]
 
     def test_job_is_frozen(self):
         job = CrawlJob(job_id="abc", agent="scout", status=CrawlJobStatus.RUNNING)

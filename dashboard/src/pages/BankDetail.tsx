@@ -6,7 +6,7 @@ import CrawlButton from '../components/CrawlButton';
 import { formatDate } from '../utils/format';
 
 interface BankInfo {
-  id: number;
+  id: string;
   bank_code: string;
   bank_name: string;
   bank_category: string;

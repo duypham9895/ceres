@@ -23,9 +23,9 @@ BANKS: tuple[tuple[str, str, str, str, str, str, bool], ...] = (
     ("DANAMON", "Bank Danamon", "Bank Danamon", "https://www.danamon.co.id", "SWASTA_NASIONAL", "KONVENSIONAL", True),
     ("PANIN", "Panin Bank", "Panin Bank", "https://www.panin.co.id", "SWASTA_NASIONAL", "KONVENSIONAL", False),
     ("BJB", "Bank BJB", "Bank Pembangunan Daerah Jawa Barat dan Banten", "https://www.bankbjb.co.id", "SWASTA_NASIONAL", "KONVENSIONAL", False),
-    ("BTPN", "Bank BTPN", "Bank BTPN", "https://www.btpn.com", "SWASTA_NASIONAL", "KONVENSIONAL", False),
+    ("BTPN", "Bank BTPN", "Bank BTPN", "https://www.btpn.com", "SWASTA_NASIONAL", "KONVENSIONAL", False),  # DNS resolves but may be blocked by Cloudflare
     ("SINARMAS", "Bank Sinarmas", "Bank Sinarmas", "https://www.banksinarmas.com", "SWASTA_NASIONAL", "KONVENSIONAL", False),
-    ("BUKOPIN", "Bank Bukopin", "Bank Bukopin", "https://www.bukopin.co.id", "SWASTA_NASIONAL", "KONVENSIONAL", False),
+    ("BUKOPIN", "KB Bank (formerly Bukopin)", "KB Bank (eks Bukopin)", "https://www.kbbank.co.id", "SWASTA_NASIONAL", "KONVENSIONAL", False),
     ("MAYAPADA", "Bank Mayapada", "Bank Mayapada", "https://www.bankmayapada.com", "SWASTA_NASIONAL", "KONVENSIONAL", False),
     ("MEGA", "Bank Mega", "Bank Mega", "https://www.bankmega.com", "SWASTA_NASIONAL", "KONVENSIONAL", False),
     ("ANDARA", "Bank Andara", "Bank Andara", "https://www.bankandara.co.id", "SWASTA_NASIONAL", "KONVENSIONAL", False),
@@ -48,22 +48,22 @@ BANKS: tuple[tuple[str, str, str, str, str, str, bool], ...] = (
     ("BANTEN", "Bank Banten", "Bank Pembangunan Daerah Banten", "https://www.bankbanten.co.id", "BPD", "KONVENSIONAL", False),
     ("NUSA", "Bank NTB Syariah", "Bank NTB Syariah", "https://www.bankntbsyariah.co.id", "BPD", "SYARIAH", False),
     ("SAUDARA", "Bank Woori Saudara", "Bank Woori Saudara", "https://www.banksaudara.com", "BPD", "KONVENSIONAL", False),
-    ("NTB", "Bank NTB", "Bank NTB", "https://www.bankntb.co.id", "BPD", "KONVENSIONAL", False),
+    ("NTB", "Bank NTB", "Bank NTB", "https://www.bankntbsyariah.co.id", "BPD", "KONVENSIONAL", False),  # Bank NTB converted to full syariah in 2018; same entity as NUSA
     ("NTT", "Bank NTT", "Bank NTT", "https://www.bankntt.co.id", "BPD", "KONVENSIONAL", False),
     ("MALUKU", "Bank Maluku Malut", "Bank Maluku Malut", "https://www.bankmalukumalut.co.id", "BPD", "KONVENSIONAL", False),
     ("PAPUA", "Bank Papua", "Bank Papua", "https://www.bankpapua.co.id", "BPD", "KONVENSIONAL", False),
     ("SULSELBAR", "Bank Sulselbar", "Bank Sulselbar", "https://www.banksulselbar.co.id", "BPD", "KONVENSIONAL", False),
-    ("GORONTALO", "Bank Gorontalo", "Bank Gorontalo", "https://www.bankgorontalo.co.id", "BPD", "KONVENSIONAL", False),
+    ("GORONTALO", "Bank SulutGo (Gorontalo)", "Bank SulutGo (Gorontalo)", "https://www.banksulutgo.co.id", "BPD", "KONVENSIONAL", False),  # Gorontalo merged into Bank SulutGo (BPD Sulut+Gorontalo); same URL as SULUT entry
     ("SULUT", "Bank SulutGo", "Bank SulutGo", "https://www.banksulutgo.co.id", "BPD", "KONVENSIONAL", False),
-    ("MALUKUUTARA", "Bank Maluku Utara", "Bank Maluku Utara", "https://www.bankmalukuutara.co.id", "BPD", "KONVENSIONAL", False),
+    ("MALUKUUTARA", "Bank Maluku Utara", "Bank Maluku Utara", "https://www.bankmalukumalut.co.id", "BPD", "KONVENSIONAL", False),  # Merged with Bank Maluku → Bank Maluku Malut; same URL as MALUKU entry
     ("KALSEL", "Bank Kalsel", "Bank Kalsel", "https://www.bankkalsel.co.id", "BPD", "KONVENSIONAL", False),
     ("KALBAR", "Bank Kalbar", "Bank Kalbar", "https://www.bankkalbar.co.id", "BPD", "KONVENSIONAL", False),
-    ("KALTARA", "Bank Kaltara", "Bank Kaltara", "https://www.bankkaltara.co.id", "BPD", "KONVENSIONAL", False),
-    ("BENGKULU", "Bank Bengkulu", "Bank Bengkulu", "https://www.bankbengkulu.co.id", "BPD", "KONVENSIONAL", False),
-    ("JAMBI", "Bank Jambi", "Bank Jambi", "https://www.bankjambi.co.id", "BPD", "KONVENSIONAL", False),
-    ("RIAUKEPRI", "Bank Riau Kepri", "Bank Riau Kepri", "https://www.bankriaukepri.co.id", "BPD", "KONVENSIONAL", False),
+    ("KALTARA", "Bankaltimtara (Kaltara)", "Bankaltimtara (Kaltara)", "https://www.bankaltimtara.co.id", "BPD", "KONVENSIONAL", False),  # Kaltara province joined BPD Kaltim → renamed Bankaltimtara in 2017
+    ("BENGKULU", "Bank Bengkulu", "Bank Bengkulu", "https://bankbengkulu.co.id", "BPD", "KONVENSIONAL", False),
+    ("JAMBI", "Bank Jambi", "Bank Jambi", "https://bankjambi.co.id", "BPD", "KONVENSIONAL", False),  # DNS resolves but server is unresponsive (scout will mark unreachable)
+    ("RIAUKEPRI", "BRK Syariah (formerly Bank Riau Kepri)", "BRK Syariah (eks Bank Riau Kepri)", "https://www.brksyariah.co.id", "BPD", "SYARIAH", False),
     ("LAMPUNG", "Bank Lampung", "Bank Lampung", "https://www.banklampung.co.id", "BPD", "KONVENSIONAL", False),
-    ("SUMSEL", "Bank Sumsel", "Bank Sumsel", "https://www.banksumsel.com", "BPD", "KONVENSIONAL", False),
+    ("SUMSEL", "Bank Sumsel", "Bank Sumsel", "https://www.banksumselbabel.com", "BPD", "KONVENSIONAL", False),  # Merged with Bank Babel → Bank Sumsel Babel; same URL as SUMSELBABEL entry
     ("SUMUT", "Bank Sumut", "Bank Sumut", "https://www.banksumut.co.id", "BPD", "KONVENSIONAL", False),
     # --- Syariah (8) ---
     ("BSI", "Bank Syariah Indonesia", "Bank Syariah Indonesia", "https://www.bankbsi.co.id", "SYARIAH", "SYARIAH", True),

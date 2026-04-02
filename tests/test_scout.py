@@ -47,3 +47,21 @@ class TestScoutAgent:
             result = await agent.run()
         assert result["banks_checked"] == 2
         assert db.update_bank_status.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_run_filters_by_bank_code(self):
+        """Passing bank_code should only check that bank, not all banks."""
+        db = AsyncMock()
+        db.fetch_banks = AsyncMock(return_value=[
+            {"id": "uuid1", "bank_code": "BCA", "website_url": "https://bca.co.id"},
+            {"id": "uuid2", "bank_code": "BRI", "website_url": "https://bri.co.id"},
+        ])
+        db.update_bank_status = AsyncMock()
+        agent = ScoutAgent(db=db)
+        with patch.object(agent, "_check_website", new_callable=AsyncMock) as mock_check:
+            mock_check.return_value = "active"
+            result = await agent.run(bank_code="BCA")
+        assert result["banks_checked"] == 1
+        assert db.update_bank_status.call_count == 1
+        checked_id = db.update_bank_status.call_args[1]["bank_id"]
+        assert checked_id == "uuid1"

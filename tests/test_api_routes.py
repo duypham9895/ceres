@@ -221,3 +221,51 @@ class TestCrawlTriggerRoutes:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post("/api/crawl/unknown_agent")
         assert resp.status_code == 400
+
+
+class TestAgentRunsRoute:
+    @pytest.mark.asyncio
+    async def test_latest_agent_runs_returns_data(self):
+        db = AsyncMock()
+        db.get_latest_agent_runs = AsyncMock(return_value=[
+            {
+                "id": "run-1",
+                "agent_name": "strategist",
+                "status": "success",
+                "started_at": "2026-04-01T10:00:00Z",
+                "finished_at": "2026-04-01T10:05:00Z",
+                "error_message": None,
+                "result": {"strategies_created": 3},
+                "rows_written": 3,
+            },
+            {
+                "id": "run-2",
+                "agent_name": "learning",
+                "status": "failed",
+                "started_at": "2026-04-01T11:00:00Z",
+                "finished_at": "2026-04-01T11:00:01Z",
+                "error_message": "TypeError: missing argument",
+                "result": None,
+                "rows_written": 0,
+            },
+        ])
+        app = make_test_app(db)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/agent-runs/latest")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert len(data) == 2
+        assert data[0]["agent_name"] == "strategist"
+        assert data[1]["status"] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_latest_agent_runs_empty(self):
+        db = AsyncMock()
+        db.get_latest_agent_runs = AsyncMock(return_value=[])
+        app = make_test_app(db)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/agent-runs/latest")
+        assert resp.status_code == 200
+        assert resp.json()["data"] == []

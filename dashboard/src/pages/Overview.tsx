@@ -34,17 +34,18 @@ interface HeatmapResponse {
 }
 
 function MetricCard({
-  title, value, delta, children,
+  title, value, delta, children, valueClassName,
 }: {
   readonly title: string;
   readonly value: string | number;
   readonly delta?: string;
   readonly children?: React.ReactNode;
+  readonly valueClassName?: string;
 }) {
   return (
-    <div className="bg-bg-card border border-border rounded-xl p-5 relative">
+    <div className="bg-bg-card border border-border rounded-xl p-5 relative overflow-hidden min-w-0">
       <p className="text-[11px] text-text-muted uppercase tracking-wide mb-1.5">{title}</p>
-      <p className="text-[28px] font-bold font-[var(--font-mono)] text-text-heading">{value}</p>
+      <p className={`text-[28px] font-bold font-[var(--font-mono)] text-text-heading${valueClassName ? ` ${valueClassName}` : ''}`}>{value}</p>
       {delta && (
         <p className={`text-[11px] mt-1 ${delta.startsWith('↑') ? 'text-success' : delta.startsWith('↓') ? 'text-error' : 'text-text-muted'}`}>
           {delta}
@@ -103,7 +104,7 @@ export default function Overview() {
       </div>
 
       {/* Metrics Row */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <MetricCard
           title="Banks Monitored"
           value={dashboard.total_banks}
@@ -124,6 +125,7 @@ export default function Overview() {
           title="Success Rate (7d)"
           value={`${successRate}%`}
           delta={stats.failed > 0 ? `${stats.failed} failed` : undefined}
+          valueClassName="pr-14"
         >
           <div className="absolute top-4 right-4">
             <RingChart

@@ -53,21 +53,24 @@ class ParserAgent(BaseAgent):
             Stats dict with programs_parsed count and any errors.
         """
         rows = await self.db.fetch_unparsed_html()
+        print(f"[parser] Found {len(rows)} unparsed rows, llm_extractor={self._llm_extractor is not None}", flush=True)
         programs_parsed = 0
         errors: list[str] = []
 
         for raw in rows:
             try:
                 programs = await self._parse_page(raw)
+                print(f"[parser] {raw.get('bank_code', '?')}: {len(programs)} programs from {raw.get('page_url', '?')[:60]}", flush=True)
                 for program in programs:
                     await self.db.upsert_loan_program(**program)
                     programs_parsed += 1
                 await self.db.mark_parsed(raw_data_id=str(raw["id"]))
             except Exception as exc:
                 error_msg = f"Failed to parse raw_id={raw['id']}: {exc}"
-                logger.error(error_msg)
+                print(f"[parser] ERROR: {error_msg}", flush=True)
                 errors.append(error_msg)
 
+        print(f"[parser] Done: {programs_parsed} programs, {len(errors)} errors", flush=True)
         return {"programs_parsed": programs_parsed, "errors": errors}
 
     async def _parse_page(self, raw: dict) -> list[dict]:

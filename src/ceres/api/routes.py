@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
@@ -172,29 +173,41 @@ async def get_bank_detail(request: Request, bank_id: str):
     """Bank detail with programs, strategies, and recent crawl logs."""
     db = request.app.state.db
 
-    bank = await db.pool.fetchrow(
-        "SELECT * FROM banks WHERE id = $1::uuid", bank_id,
-    )
+    # Try UUID lookup first, fall back to bank_code
+    try:
+        UUID(bank_id)
+        bank = await db.pool.fetchrow(
+            "SELECT * FROM banks WHERE id = $1::uuid", bank_id,
+        )
+    except ValueError:
+        bank = await db.pool.fetchrow(
+            "SELECT * FROM banks WHERE bank_code = $1", bank_id,
+        )
     if bank is None:
         return _error("Bank not found", code="NOT_FOUND", status=404)
 
-    programs = await db.fetch_loan_programs(bank_id=bank_id)
-    strategies = await db.fetch_active_strategies(bank_id=bank_id)
+    bid = str(bank["id"])
+    programs = await db.fetch_loan_programs(bank_id=bid)
+    strategies = await db.fetch_active_strategies(bank_id=bid)
     crawl_logs = await db.pool.fetch(
         """
-        SELECT * FROM crawl_logs
-        WHERE bank_id = $1::uuid
-        ORDER BY created_at DESC
+        SELECT cl.*, cl.created_at AS started_at, b.bank_code
+        FROM crawl_logs cl
+        JOIN banks b ON b.id = cl.bank_id
+        WHERE cl.bank_id = $1::uuid
+        ORDER BY cl.created_at DESC
         LIMIT 20
         """,
-        bank_id,
+        bid,
     )
+
+    strategy = dict(strategies[0]) if strategies else None
 
     return {
         "bank": dict(bank),
+        "strategy": strategy,
         "programs": [dict(p) for p in programs],
-        "strategies": [dict(s) for s in strategies],
-        "recent_crawl_logs": [dict(cl) for cl in crawl_logs],
+        "crawl_logs": [dict(cl) for cl in crawl_logs],
     }
 
 
@@ -222,35 +235,38 @@ async def list_crawl_logs(
     param_idx = 1
 
     if status is not None:
-        conditions.append(f"status = ${param_idx}")
+        conditions.append(f"cl.status = ${param_idx}")
         params.append(status)
         param_idx += 1
 
     if bank_id is not None:
-        conditions.append(f"bank_id = ${param_idx}::uuid")
+        conditions.append(f"cl.bank_id = ${param_idx}::uuid")
         params.append(bank_id)
         param_idx += 1
 
     if date_from is not None:
-        conditions.append(f"created_at >= ${param_idx}::timestamptz")
+        conditions.append(f"cl.created_at >= ${param_idx}::timestamptz")
         params.append(date_from)
         param_idx += 1
 
     if date_to is not None:
-        conditions.append(f"created_at <= ${param_idx}::timestamptz")
+        conditions.append(f"cl.created_at <= ${param_idx}::timestamptz")
         params.append(date_to)
         param_idx += 1
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
     total = await db.pool.fetchval(
-        f"SELECT COUNT(*) FROM crawl_logs {where}", *params,
+        f"SELECT COUNT(*) FROM crawl_logs cl JOIN banks b ON b.id = cl.bank_id {where}", *params,
     )
 
     rows = await db.pool.fetch(
         f"""
-        SELECT * FROM crawl_logs {where}
-        ORDER BY created_at DESC
+        SELECT cl.*, cl.created_at AS started_at, b.bank_code
+        FROM crawl_logs cl
+        JOIN banks b ON b.id = cl.bank_id
+        {where}
+        ORDER BY cl.created_at DESC
         LIMIT ${param_idx} OFFSET ${param_idx + 1}
         """,
         *params, limit, offset,
@@ -352,6 +368,19 @@ async def list_recommendations(request: Request) -> dict:
     )
 
     return {"data": [dict(r) for r in rows]}
+
+
+# ------------------------------------------------------------------
+# Agent Runs
+# ------------------------------------------------------------------
+
+
+@router.get("/agent-runs/latest")
+async def latest_agent_runs(request: Request) -> dict:
+    """Most recent run per agent for dashboard status display."""
+    db = request.app.state.db
+    rows = await db.get_latest_agent_runs()
+    return {"data": rows}
 
 
 # ------------------------------------------------------------------

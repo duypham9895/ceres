@@ -61,7 +61,7 @@ class CrawlerAgent(BaseAgent):
         )
 
         for result in results:
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 self.logger.error(f"Bank crawl failed: {result}")
                 stats["failures"] += 1
             else:
@@ -79,6 +79,8 @@ class CrawlerAgent(BaseAgent):
         """Crawl all loan pages for a single bank strategy.
 
         Creates a local RateLimiter per bank for concurrency safety.
+        The crawl_log lifecycle is wrapped in try/finally to ensure
+        orphaned 'running' logs are always cleaned up on crash.
         """
         bank_code = strategy["bank_code"]
         strategy_id = strategy["id"]
@@ -95,43 +97,55 @@ class CrawlerAgent(BaseAgent):
         bank_stats = {"banks_crawled": 0, "pages_fetched": 0, "failures": 0}
         anti_bot_detected = False
 
-        for url in loan_page_urls:
-            try:
-                html = await self._fetch_with_retry(
-                    url=url,
-                    strategy=strategy,
-                    bank_code=bank_code,
-                    rate_limiter=rate_limiter,
-                )
-
-                bot_result = detect_anti_bot(html)
-                if bot_result.detected:
-                    anti_bot_detected = True
-                    self.logger.warning(
-                        f"Anti-bot detected on {url}: {bot_result.anti_bot_type}"
+        try:
+            for url in loan_page_urls:
+                try:
+                    html = await self._fetch_with_retry(
+                        url=url,
+                        strategy=strategy,
+                        bank_code=bank_code,
+                        rate_limiter=rate_limiter,
                     )
 
-                await self.db.store_raw_html(
-                    crawl_log_id=crawl_log_id,
-                    bank_id=str(strategy["bank_id"]),
-                    page_url=url,
-                    raw_html=html,
-                )
-                bank_stats["pages_fetched"] += 1
+                    bot_result = detect_anti_bot(html)
+                    if bot_result.detected:
+                        anti_bot_detected = True
+                        self.logger.warning(
+                            f"Anti-bot detected on {url}: {bot_result.anti_bot_type}"
+                        )
 
-            except Exception as exc:
-                self.logger.error(f"Failed to crawl {url}: {exc}")
-                bank_stats["failures"] += 1
+                    await self.db.store_raw_html(
+                        crawl_log_id=crawl_log_id,
+                        bank_id=str(strategy["bank_id"]),
+                        page_url=url,
+                        raw_html=html,
+                    )
+                    bank_stats["pages_fetched"] += 1
 
-        status = "failed" if bank_stats["failures"] > 0 else "success"
-        if bank_stats["pages_fetched"] > 0:
-            bank_stats["banks_crawled"] = 1
+                except Exception as exc:
+                    self.logger.error(f"Failed to crawl {url}: {exc}")
+                    bank_stats["failures"] += 1
 
-        await self.db.update_crawl_log(
-            crawl_log_id=crawl_log_id,
-            status=status,
-            pages_crawled=bank_stats["pages_fetched"],
-        )
+            status = "failed" if bank_stats["failures"] > 0 else "success"
+            if bank_stats["pages_fetched"] > 0:
+                bank_stats["banks_crawled"] = 1
+        except BaseException:
+            status = "failed"
+            self.logger.exception(f"Crawl crashed for {bank_code}")
+
+        try:
+            await self.db.update_crawl_log(
+                crawl_log_id=crawl_log_id,
+                status=status,
+                pages_crawled=bank_stats["pages_fetched"],
+            )
+            await self.db.update_strategy_success_rate(
+                strategy_id=str(strategy_id),
+            )
+        except Exception:
+            self.logger.exception(
+                f"Failed to update crawl_log {crawl_log_id} to {status}"
+            )
 
         return bank_stats
 

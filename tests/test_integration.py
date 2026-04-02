@@ -43,7 +43,8 @@ class TestIntegration:
             "blocked": 0, "banks_crawled": 0, "total_programs_found": 0,
         })
         db.fetch_loan_programs = AsyncMock(return_value=[])
-        db.add_recommendation = AsyncMock(return_value="rec1")
+        db.add_recommendation = AsyncMock(return_value={"id": "rec1", "rec_type": "product_gap"})
+        db.clear_recommendations_by_type = AsyncMock(return_value=0)
 
         await ScoutAgent(db=db).execute()
         await CrawlerAgent(db=db).execute()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ssl
 from typing import Any, Optional
 
 import aiohttp
@@ -12,6 +13,12 @@ from ceres.database import Database
 
 BATCH_SIZE = 10
 DEFAULT_TIMEOUT = 15
+
+# Lenient SSL context for banks that use locally-issued CA certificates
+# (common with Indonesian regional banks whose CAs are not in certifi).
+_LENIENT_SSL = ssl.create_default_context()
+_LENIENT_SSL.check_hostname = False
+_LENIENT_SSL.verify_mode = ssl.CERT_NONE
 
 
 class ScoutAgent(BaseAgent):
@@ -23,12 +30,21 @@ class ScoutAgent(BaseAgent):
         super().__init__(db=db, config=config)
 
     async def run(self, **kwargs) -> dict:
-        """Fetch all banks and check their websites in batches.
+        """Fetch banks and check their websites in batches.
+
+        Args:
+            bank_code: Optional filter to check only a specific bank.
 
         Returns a stats dict with banks_checked, active, unreachable,
         and blocked counts.
         """
-        banks = await self.db.fetch_banks()
+        bank_code: Optional[str] = kwargs.get("bank_code")
+        all_banks = await self.db.fetch_banks()
+        banks = (
+            [b for b in all_banks if b["bank_code"] == bank_code]
+            if bank_code is not None
+            else all_banks
+        )
         stats = {"banks_checked": 0, "active": 0, "unreachable": 0, "blocked": 0}
 
         for i in range(0, len(banks), BATCH_SIZE):
@@ -77,7 +93,10 @@ class ScoutAgent(BaseAgent):
         """
         try:
             client_timeout = aiohttp.ClientTimeout(total=timeout)
-            async with aiohttp.ClientSession(timeout=client_timeout) as session:
+            connector = aiohttp.TCPConnector(ssl=_LENIENT_SSL)
+            async with aiohttp.ClientSession(
+                connector=connector, timeout=client_timeout
+            ) as session:
                 response = await session.head(url)
                 if response.status == 403:
                     return "blocked"

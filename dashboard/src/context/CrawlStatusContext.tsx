@@ -29,7 +29,7 @@ export interface CrawlStatus {
   isConnected: boolean;
 }
 
-const DAILY_STEPS = ['scout', 'strategist', 'crawler', 'parser'];
+const DAILY_STEPS = ['scout', 'strategist', 'crawler', 'parser', 'learning'];
 
 function buildPipelineSteps(agent: string): PipelineStep[] {
   if (agent === 'daily') {

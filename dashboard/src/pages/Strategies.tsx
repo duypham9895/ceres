@@ -13,6 +13,14 @@ interface Strategy {
   readonly updated_at: string;
 }
 
+interface AgentRun {
+  readonly agent_name: string;
+  readonly status: string;
+  readonly started_at: string;
+  readonly finished_at: string | null;
+  readonly error_message: string | null;
+}
+
 function SuccessRateBar({ rate }: { readonly rate: number }) {
   const percentage = Math.round(rate * 100);
   const barColor = percentage >= 80 ? 'bg-success' : percentage >= 50 ? 'bg-warning' : 'bg-error';
@@ -33,6 +41,12 @@ export default function Strategies() {
     queryFn: () => apiFetch<{ data: Strategy[] }>('/api/strategies').then(r => r.data),
   });
 
+  const { data: agentRuns } = useQuery({
+    queryKey: ['agent-runs-latest'],
+    queryFn: () => apiFetch<{ data: AgentRun[] }>('/api/agent-runs/latest').then(r => r.data),
+    enabled: !data || data.length === 0,
+  });
+
   if (isLoading) return <p className="text-text-muted">Loading strategies...</p>;
 
   if (error) {
@@ -44,10 +58,32 @@ export default function Strategies() {
   }
 
   if (!data || data.length === 0) {
+    const lastRun = agentRuns?.find(r => r.agent_name === 'strategist');
     return (
       <div>
         <h2 className="text-2xl font-bold text-text-heading mb-6">Strategies</h2>
-        <p className="text-text-muted">No strategies found. Run the Strategist agent to generate strategies.</p>
+        <div className="bg-bg-card rounded-lg border border-border p-6">
+          <p className="text-text-muted mb-3">No strategies found.</p>
+          {lastRun ? (
+            <div className="text-sm space-y-1 mb-4">
+              <p className="text-text-secondary">
+                Last strategist run:{' '}
+                <span className={lastRun.status === 'success' ? 'text-success' : lastRun.status === 'failed' ? 'text-error' : 'text-warning'}>
+                  {lastRun.status.toUpperCase()}
+                </span>
+                {' '}at {formatShortDateTime(lastRun.started_at)}
+              </p>
+              {lastRun.error_message && (
+                <p className="text-error text-xs font-[var(--font-mono)]">
+                  Error: {lastRun.error_message}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-text-dim text-sm mb-4">Strategist has never been run.</p>
+          )}
+          <CrawlButton agent="strategist" label="Run Strategist" />
+        </div>
       </div>
     );
   }

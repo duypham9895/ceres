@@ -37,7 +37,7 @@ class LearningAgent(BaseAgent):
         programs = await self.db.fetch_loan_programs()
 
         total = stats.get("total_crawls", 0)
-        successes = stats.get("successes", 0)
+        successes = stats.get("successful", 0)
         overall_success_rate = successes / total if total > 0 else 0.0
 
         coverage = _analyze_coverage(programs)
@@ -50,7 +50,7 @@ class LearningAgent(BaseAgent):
             "total_crawls": total,
             "banks_crawled": stats.get("banks_crawled", 0),
             "total_programs_found": stats.get("total_programs_found", 0),
-            "failures": stats.get("failures", 0),
+            "failures": stats.get("failed", 0),
             "blocked": stats.get("blocked", 0),
             "coverage": coverage,
             "recommendation_ids": recommendation_ids,
@@ -76,6 +76,10 @@ class LearningAgent(BaseAgent):
         """
         recommendation_ids: list[str] = []
 
+        # Clear existing recommendations before regenerating to avoid duplicates.
+        await self.db.clear_recommendations_by_type(rec_type="product_gap")
+        await self.db.clear_recommendations_by_type(rec_type="partnership_opportunity")
+
         # Product gap analysis: find missing loan types.
         covered_types = {
             p.get("loan_type") for p in programs if p.get("loan_type")
@@ -83,12 +87,14 @@ class LearningAgent(BaseAgent):
         missing_types = EXPECTED_LOAN_TYPES - covered_types
 
         for loan_type in sorted(missing_types):
-            rec_id = await self.db.add_recommendation(
+            rec = await self.db.add_recommendation(
                 rec_type="product_gap",
-                bank_code="ALL",
-                details={"missing_loan_type": loan_type},
+                priority=3,
+                title=f"Missing loan type: {loan_type}",
+                summary=f"No banks currently offer {loan_type} products. Consider expanding coverage.",
+                impact_score=0.5,
             )
-            recommendation_ids.append(rec_id)
+            recommendation_ids.append(str(rec["id"]))
 
         # Partnership opportunities: non-partner banks with KPR products
         # and average data_confidence >= threshold.
@@ -116,16 +122,18 @@ class LearningAgent(BaseAgent):
             if avg_confidence < MIN_PARTNERSHIP_CONFIDENCE:
                 continue
 
-            rec_id = await self.db.add_recommendation(
+            rec = await self.db.add_recommendation(
                 rec_type="partnership_opportunity",
-                bank_code=bank_code,
-                details={
-                    "bank_name": bank.get("bank_name", ""),
-                    "kpr_program_count": len(kpr_programs),
-                    "avg_confidence": avg_confidence,
-                },
+                priority=2,
+                title=f"Partnership opportunity: {bank.get('bank_name', bank_code)}",
+                summary=(
+                    f"{len(kpr_programs)} KPR programs found with "
+                    f"{avg_confidence:.0%} avg confidence. "
+                    f"Non-partner bank with strong data."
+                ),
+                impact_score=avg_confidence,
             )
-            recommendation_ids.append(rec_id)
+            recommendation_ids.append(str(rec["id"]))
 
         return recommendation_ids
 

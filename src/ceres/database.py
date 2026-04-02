@@ -111,21 +111,25 @@ class Database:
     async def fetch_active_strategies(
         self, *, bank_id: Optional[str] = None
     ) -> list[dict[str, Any]]:
-        """Return active primary strategies, optionally for a specific bank."""
+        """Return active primary strategies joined with bank info, optionally for a specific bank."""
         if bank_id is not None:
             return await self.pool.fetch(
                 """
-                SELECT * FROM bank_strategies
-                WHERE is_active = true AND is_primary = true AND bank_id = $1::uuid
-                ORDER BY version DESC
+                SELECT bs.*, b.bank_code, b.bank_name
+                FROM bank_strategies bs
+                JOIN banks b ON b.id = bs.bank_id
+                WHERE bs.is_active = true AND bs.is_primary = true AND bs.bank_id = $1::uuid
+                ORDER BY bs.version DESC
                 """,
                 bank_id,
             )
         return await self.pool.fetch(
             """
-            SELECT * FROM bank_strategies
-            WHERE is_active = true AND is_primary = true
-            ORDER BY bank_id, version DESC
+            SELECT bs.*, b.bank_code, b.bank_name
+            FROM bank_strategies bs
+            JOIN banks b ON b.id = bs.bank_id
+            WHERE bs.is_active = true AND bs.is_primary = true
+            ORDER BY bs.bank_id, bs.version DESC
             """
         )
 
@@ -236,6 +240,35 @@ class Database:
             error_type,
             error_message,
             error_stack,
+        )
+
+    async def update_strategy_success_rate(
+        self, *, strategy_id: str
+    ) -> None:
+        """Recompute success_rate from crawl_logs for a single strategy.
+
+        success_rate = successful crawls / total completed crawls (last 30 days).
+        Only counts crawls that finished (status in 'success', 'failed').
+        """
+        await self.pool.execute(
+            """
+            UPDATE bank_strategies
+            SET success_rate = COALESCE((
+                SELECT
+                    CASE WHEN COUNT(*) = 0 THEN 0.00
+                    ELSE ROUND(
+                        COUNT(*) FILTER (WHERE status = 'success')::numeric
+                        / COUNT(*)::numeric, 2
+                    )
+                    END
+                FROM crawl_logs
+                WHERE strategy_id = $1::uuid
+                    AND status IN ('success', 'failed')
+                    AND created_at > NOW() - INTERVAL '30 days'
+            ), 0.00)
+            WHERE id = $1::uuid
+            """,
+            strategy_id,
         )
 
     # ------------------------------------------------------------------
@@ -479,6 +512,18 @@ class Database:
     # Ringkas Recommendations
     # ------------------------------------------------------------------
 
+    async def clear_recommendations_by_type(self, *, rec_type: str) -> int:
+        """Delete existing recommendations of the given type.
+
+        Returns the number of rows deleted.
+        """
+        result = await self.pool.execute(
+            "DELETE FROM ringkas_recommendations WHERE rec_type = $1",
+            rec_type,
+        )
+        # asyncpg execute returns 'DELETE N'
+        return int(result.split()[-1])
+
     async def add_recommendation(
         self,
         *,
@@ -532,3 +577,71 @@ class Database:
             days,
         )
         return dict(row) if row else {}
+
+    # ------------------------------------------------------------------
+    # Agent Run Tracking
+    # ------------------------------------------------------------------
+
+    async def log_agent_start(self, *, agent_name: str) -> dict[str, Any]:
+        """Insert a new agent_runs row with status='running'.
+
+        Returns the row including the generated id for later updates.
+        """
+        row = await self.pool.fetchrow(
+            """
+            INSERT INTO agent_runs (agent_name, status)
+            VALUES ($1, 'running')
+            RETURNING *
+            """,
+            agent_name,
+        )
+        return dict(row)
+
+    async def log_agent_finish(
+        self,
+        *,
+        run_id: str,
+        result: dict,
+        rows_written: int = 0,
+    ) -> None:
+        """Mark an agent run as successful."""
+        await self.pool.execute(
+            """
+            UPDATE agent_runs
+            SET status = 'success',
+                finished_at = NOW(),
+                result = $2::jsonb,
+                rows_written = $3
+            WHERE id = $1::uuid
+            """,
+            run_id,
+            json.dumps(result),
+            rows_written,
+        )
+
+    async def log_agent_error(
+        self, *, run_id: str, error_message: str
+    ) -> None:
+        """Mark an agent run as failed with an error message."""
+        await self.pool.execute(
+            """
+            UPDATE agent_runs
+            SET status = 'failed',
+                finished_at = NOW(),
+                error_message = $2
+            WHERE id = $1::uuid
+            """,
+            run_id,
+            error_message,
+        )
+
+    async def get_latest_agent_runs(self) -> list[dict[str, Any]]:
+        """Return the most recent run per agent_name."""
+        rows = await self.pool.fetch(
+            """
+            SELECT DISTINCT ON (agent_name) *
+            FROM agent_runs
+            ORDER BY agent_name, started_at DESC
+            """
+        )
+        return [dict(r) for r in rows]

@@ -16,10 +16,10 @@ const INITIAL: CrawlStatus = {
 };
 
 describe('buildPipelineSteps', () => {
-  it('builds 4 steps for daily agent', () => {
+  it('builds 5 steps for daily agent', () => {
     const steps = buildPipelineSteps('daily');
-    expect(steps).toHaveLength(4);
-    expect(steps.map(s => s.name)).toEqual(['scout', 'strategist', 'crawler', 'parser']);
+    expect(steps).toHaveLength(5);
+    expect(steps.map(s => s.name)).toEqual(['scout', 'strategist', 'crawler', 'parser', 'learning']);
     expect(steps.every(s => s.status === 'pending')).toBe(true);
   });
 
@@ -36,7 +36,7 @@ describe('processEvent', () => {
     const result = processEvent(INITIAL, event);
     expect(result.isRunning).toBe(true);
     expect(result.jobId).toBe('123');
-    expect(result.steps).toHaveLength(4);
+    expect(result.steps).toHaveLength(5);
     expect(result.currentStep).toBe('scout');
   });
 
