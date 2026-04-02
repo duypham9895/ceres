@@ -85,11 +85,12 @@ class CrawlerAgent(BaseAgent):
         loan_page_urls: list[str] = json.loads(strategy["loan_page_urls"])
         rate_limiter = RateLimiter(delay_ms=strategy["rate_limit_ms"])
 
-        log_id = await self.db.create_crawl_log(
-            bank_id=strategy["bank_id"],
-            strategy_id=strategy_id,
+        log_row = await self.db.create_crawl_log(
+            bank_id=str(strategy["bank_id"]),
+            strategy_id=str(strategy_id),
             status="running",
         )
+        crawl_log_id = str(log_row["id"])
 
         bank_stats = {"banks_crawled": 0, "pages_fetched": 0, "failures": 0}
         anti_bot_detected = False
@@ -111,8 +112,8 @@ class CrawlerAgent(BaseAgent):
                     )
 
                 await self.db.store_raw_html(
-                    crawl_log_id=log_id,
-                    bank_id=strategy["bank_id"],
+                    crawl_log_id=crawl_log_id,
+                    bank_id=str(strategy["bank_id"]),
                     page_url=url,
                     raw_html=html,
                 )
@@ -122,12 +123,12 @@ class CrawlerAgent(BaseAgent):
                 self.logger.error(f"Failed to crawl {url}: {exc}")
                 bank_stats["failures"] += 1
 
-        status = "failed" if bank_stats["failures"] > 0 else "completed"
+        status = "failed" if bank_stats["failures"] > 0 else "success"
         if bank_stats["pages_fetched"] > 0:
             bank_stats["banks_crawled"] = 1
 
         await self.db.update_crawl_log(
-            crawl_log_id=log_id,
+            crawl_log_id=crawl_log_id,
             status=status,
             pages_crawled=bank_stats["pages_fetched"],
         )
