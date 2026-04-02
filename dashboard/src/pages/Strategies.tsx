@@ -1,5 +1,6 @@
+import { Fragment, useState, useRef, useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '../api/client';
+import { apiFetch, apiPost } from '../api/client';
 import { formatShortDateTime } from '../utils/format';
 import CrawlButton from '../components/CrawlButton';
 
@@ -21,6 +22,31 @@ interface AgentRun {
   readonly error_message: string | null;
 }
 
+type PillStatus = 'DEAD' | 'DEGRADED' | 'HEALTHY' | 'STRONG';
+
+function getStatus(rate: number): PillStatus {
+  if (rate === 0) return 'DEAD';
+  if (rate < 0.5) return 'DEGRADED';
+  if (rate >= 0.8) return 'STRONG';
+  return 'HEALTHY';
+}
+
+const PILL_STYLES: Record<PillStatus, string> = {
+  DEAD: 'bg-error/20 text-error',
+  DEGRADED: 'bg-warning/20 text-warning',
+  HEALTHY: 'bg-success/20 text-success',
+  STRONG: 'bg-success/30 text-success font-bold',
+};
+
+function StatusPill({ rate }: { readonly rate: number }) {
+  const status = getStatus(rate);
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${PILL_STYLES[status]}`}>
+      {status}
+    </span>
+  );
+}
+
 function SuccessRateBar({ rate }: { readonly rate: number }) {
   const percentage = Math.round(rate * 100);
   const barColor = percentage >= 80 ? 'bg-success' : percentage >= 50 ? 'bg-warning' : 'bg-error';
@@ -35,7 +61,24 @@ function SuccessRateBar({ rate }: { readonly rate: number }) {
   );
 }
 
+function AntiBotBadge({ type }: { readonly type: string | null }) {
+  if (!type || type === 'None') {
+    return <span className="text-text-dim text-[11px]">None</span>;
+  }
+  return (
+    <span className="px-2 py-0.5 rounded-full text-[11px] bg-warning/10 text-warning">
+      {type}
+    </span>
+  );
+}
+
 export default function Strategies() {
+  const [expandedBank, setExpandedBank] = useState<string | null>(null);
+  const [selectedBanks, setSelectedBanks] = useState<ReadonlySet<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<string | null>(null);
+  const [isBulkRunning, setIsBulkRunning] = useState(false);
+  const headerCheckboxRef = useRef<HTMLInputElement>(null);
+
   const { data, isLoading, error } = useQuery({
     queryKey: ['strategies'],
     queryFn: () => apiFetch<{ data: Strategy[] }>('/api/strategies').then(r => r.data),
@@ -46,6 +89,90 @@ export default function Strategies() {
     queryFn: () => apiFetch<{ data: AgentRun[] }>('/api/agent-runs/latest').then(r => r.data),
     enabled: !data || data.length === 0,
   });
+
+  const sorted = useMemo(
+    () => data ? [...data].sort((a, b) => a.success_rate - b.success_rate) : [],
+    [data],
+  );
+
+  const { totalBanks, avgSuccess, needAttention } = useMemo(() => {
+    const total = sorted.length;
+    const avg = total > 0
+      ? Math.round((sorted.reduce((sum, s) => sum + s.success_rate, 0) / total) * 100)
+      : 0;
+    const attention = sorted.filter(s => s.success_rate === 0).length;
+    return { totalBanks: total, avgSuccess: avg, needAttention: attention };
+  }, [sorted]);
+
+  const updateHeaderCheckbox = useCallback((selected: ReadonlySet<string>, total: number) => {
+    if (headerCheckboxRef.current) {
+      headerCheckboxRef.current.checked = selected.size === total && total > 0;
+      headerCheckboxRef.current.indeterminate = selected.size > 0 && selected.size < total;
+    }
+  }, []);
+
+  const toggleBank = (bankCode: string) => {
+    const next = new Set(selectedBanks);
+    if (next.has(bankCode)) {
+      next.delete(bankCode);
+    } else {
+      next.add(bankCode);
+    }
+    setSelectedBanks(next);
+    updateHeaderCheckbox(next, sorted.length);
+  };
+
+  const toggleAll = () => {
+    if (selectedBanks.size === sorted.length) {
+      setSelectedBanks(new Set());
+      updateHeaderCheckbox(new Set(), sorted.length);
+    } else {
+      const all = new Set(sorted.map(s => s.bank_code));
+      setSelectedBanks(all);
+      updateHeaderCheckbox(all, sorted.length);
+    }
+  };
+
+  const selectAllFailing = () => {
+    const failing = new Set(sorted.filter(s => s.success_rate === 0).map(s => s.bank_code));
+    setSelectedBanks(failing);
+    updateHeaderCheckbox(failing, sorted.length);
+  };
+
+  const clearSelection = () => {
+    setSelectedBanks(new Set());
+    updateHeaderCheckbox(new Set(), sorted.length);
+  };
+
+  const bulkRebuild = async () => {
+    const banks = [...selectedBanks];
+    setIsBulkRunning(true);
+    setBulkStatus(`Rebuilding 0/${banks.length}...`);
+    let succeeded = 0;
+    const failed: string[] = [];
+
+    for (let i = 0; i < banks.length; i++) {
+      setBulkStatus(`Rebuilding ${i + 1}/${banks.length}...`);
+      try {
+        await apiPost(`/api/crawl/strategist?bank=${banks[i]}`);
+        succeeded++;
+      } catch {
+        failed.push(banks[i]);
+      }
+    }
+
+    if (failed.length === 0) {
+      setBulkStatus(`✓ Rebuilt ${succeeded}/${banks.length} banks`);
+      clearSelection();
+    } else if (succeeded === 0 && banks.length > 0) {
+      setBulkStatus(`✗ Rebuild failed — ${failed.length} banks failed (${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '...' : ''})`);
+    } else {
+      setBulkStatus(`⚠ Rebuilt ${succeeded}/${banks.length} banks — ${failed.length} failed (${failed.join(', ')})`);
+    }
+
+    setIsBulkRunning(false);
+    setTimeout(() => setBulkStatus(null), 8000);
+  };
 
   if (isLoading) return <p className="text-text-muted">Loading strategies...</p>;
 
@@ -90,42 +217,128 @@ export default function Strategies() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold text-text-heading mb-6">Strategies</h2>
-      <div className="overflow-x-auto bg-bg-card rounded-lg border border-border">
-        <table className="min-w-full divide-y divide-border">
-          <thead className="bg-bg-card">
-            <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Bank Code</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Bank Name</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Bypass Method</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Anti-Bot Type</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Success Rate</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Version</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Updated</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Actions</th>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-2xl font-bold text-text-heading">Strategies</h2>
+        <CrawlButton agent="strategist" label="Run All Strategist" />
+      </div>
+
+      <p className="text-sm text-text-muted mb-4">
+        {totalBanks} banks · {avgSuccess}% avg success · {needAttention} need attention
+      </p>
+
+      {/* Bulk action bar — visible when banks selected OR status message showing */}
+      {(selectedBanks.size > 0 || bulkStatus) && (
+        <div className="flex items-center gap-3 mb-3 px-4 py-2.5 bg-bg-card rounded-lg border border-border-light">
+          {bulkStatus ? (
+            <span className="text-sm text-text-muted font-[var(--font-mono)]">{bulkStatus}</span>
+          ) : (
+            <>
+              <span className="text-sm text-text-secondary">
+                {selectedBanks.size} bank{selectedBanks.size > 1 ? 's' : ''} selected
+              </span>
+              <button
+                onClick={bulkRebuild}
+                disabled={isBulkRunning}
+                className="px-3 py-1.5 rounded-md text-[12px] font-medium bg-accent text-white hover:bg-accent/80 disabled:opacity-50"
+              >
+                Rebuild Selected
+              </button>
+              <button
+                onClick={clearSelection}
+                className="px-3 py-1.5 rounded-md text-[12px] font-medium text-text-muted hover:text-text-body"
+              >
+                Clear
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      <div className="bg-bg-card rounded-lg border border-border">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-border">
+              <th className="w-10 px-3 py-3">
+                <input
+                  ref={headerCheckboxRef}
+                  type="checkbox"
+                  onChange={toggleAll}
+                  className="rounded border-border-light accent-accent"
+                />
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Bank</th>
+              <th className="w-28 px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Status</th>
+              <th className="w-24 px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Anti-Bot</th>
+              <th className="w-24 px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Updated</th>
             </tr>
           </thead>
-          <tbody className="bg-bg-card divide-y divide-border">
-            {data.map((strategy) => (
-              <tr key={strategy.bank_code} className="hover:bg-bg-hover">
-                <td className="px-4 py-3 text-sm font-[var(--font-mono)] text-text-heading">{strategy.bank_code}</td>
-                <td className="px-4 py-3 text-sm text-text-heading">{strategy.bank_name}</td>
-                <td className="px-4 py-3 text-sm text-text-secondary">{strategy.bypass_method}</td>
-                <td className="px-4 py-3 text-sm text-text-secondary">{strategy.anti_bot_type || 'None'}</td>
-                <td className="px-4 py-3"><SuccessRateBar rate={strategy.success_rate} /></td>
-                <td className="px-4 py-3 text-sm font-[var(--font-mono)] text-text-secondary">v{strategy.version}</td>
-                <td className="px-4 py-3 text-sm text-text-muted">{formatShortDateTime(strategy.updated_at)}</td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-2">
-                    <CrawlButton agent="strategist" label="Rebuild Strategy" bank={strategy.bank_code} variant="secondary" />
-                    <CrawlButton agent="lab" label="Test with Lab" bank={strategy.bank_code} variant="secondary" />
-                  </div>
-                </td>
-              </tr>
-            ))}
+          <tbody className="divide-y divide-border">
+            {sorted.map((strategy) => {
+              const isExpanded = expandedBank === strategy.bank_code;
+              return (
+                <Fragment key={strategy.bank_code}>
+                  <tr
+                    className="hover:bg-bg-hover cursor-pointer transition-colors"
+                    onClick={() => setExpandedBank(isExpanded ? null : strategy.bank_code)}
+                  >
+                    <td className="w-10 px-3 py-3" onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedBanks.has(strategy.bank_code)}
+                        onChange={() => toggleBank(strategy.bank_code)}
+                        className="rounded border-border-light accent-accent"
+                      />
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] text-text-dim transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                        <div>
+                          <p className="text-sm font-[var(--font-mono)] font-medium text-text-heading">{strategy.bank_code}</p>
+                          <p className="text-xs text-text-muted">{strategy.bank_name}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="w-28 px-4 py-3"><StatusPill rate={strategy.success_rate} /></td>
+                    <td className="w-24 px-4 py-3"><AntiBotBadge type={strategy.anti_bot_type} /></td>
+                    <td className="w-24 px-4 py-3 text-sm text-text-muted">{formatShortDateTime(strategy.updated_at)}</td>
+                  </tr>
+                  {isExpanded && (
+                    <tr className="bg-bg-hover/50">
+                      <td colSpan={5} className="px-12 py-4">
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-4 text-sm">
+                              <span className="text-text-muted">Bypass:</span>
+                              <span className="text-text-secondary font-[var(--font-mono)]">{strategy.bypass_method}</span>
+                              <span className="text-text-muted">Version:</span>
+                              <span className="text-text-secondary font-[var(--font-mono)]">v{strategy.version}</span>
+                            </div>
+                            <SuccessRateBar rate={strategy.success_rate} />
+                          </div>
+                          <div className="flex gap-2">
+                            <CrawlButton agent="strategist" label="Rebuild Strategy" bank={strategy.bank_code} variant="secondary" />
+                            <CrawlButton agent="lab" label="Test with Lab" bank={strategy.bank_code} variant="secondary" />
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
+
+      {/* Quick actions */}
+      {needAttention > 0 && selectedBanks.size === 0 && (
+        <button
+          onClick={selectAllFailing}
+          className="mt-3 text-xs text-text-dim hover:text-text-muted transition-colors"
+        >
+          Select all {needAttention} failing banks →
+        </button>
+      )}
     </div>
   );
 }

@@ -1,0 +1,35 @@
+# Dependencies
+dashboard/node_modules/
+node_modules/
+__pycache__/
+*.pyc
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Build artifacts
+dashboard/dist/
+dashboard/build/
+*.egg-info/
+dist/
+build/
+.coverage
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Docs and planning
+docs/
+.planning/
+*.md
+
+# Misc
+.env.local
+.DS_Store
