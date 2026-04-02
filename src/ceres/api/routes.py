@@ -620,11 +620,37 @@ async def rates_trend(
 # ------------------------------------------------------------------
 
 
+@router.post("/strategies/rebuild-all")
+async def rebuild_all_strategies(request: Request) -> JSONResponse:
+    """Enqueue strategy rebuild for all active banks with force=True."""
+    db = request.app.state.db
+    runner = request.app.state.task_runner
+
+    banks = await db.fetch_banks()
+    active_banks = [b for b in banks if b.get("website_status") in ("active", "unknown")]
+
+    queued = 0
+    failed_banks: list[str] = []
+
+    for bank in active_banks:
+        job = await runner.start_job("strategist", bank_code=bank["bank_code"], force=True)
+        if job is not None:
+            queued += 1
+        else:
+            failed_banks.append(bank["bank_code"])
+
+    return JSONResponse(
+        {"queued": queued, "total_banks": len(active_banks), "failed": failed_banks},
+        status_code=202,
+    )
+
+
 @router.post("/crawl/{agent_name}")
 async def trigger_crawl(
     request: Request,
     agent_name: str,
     bank: Optional[str] = Query(None),
+    force: bool = Query(False),
 ) -> JSONResponse:
     """Trigger a crawl job. Returns 202 on success, 409 if busy, 400 if unknown agent."""
     if agent_name not in VALID_AGENTS:
@@ -640,7 +666,7 @@ async def trigger_crawl(
     if bank is not None:
         kwargs["bank_code"] = bank
 
-    job = await runner.start_job(agent_name, **kwargs)
+    job = await runner.start_job(agent_name, force=force, **kwargs)
 
     if job is None:
         return _error(

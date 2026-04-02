@@ -216,7 +216,7 @@ class TestCrawlTriggerRoutes:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post("/api/crawl/crawler?bank=BCA")
         assert resp.status_code == 202
-        runner.start_job.assert_called_once_with("crawler", bank_code="BCA")
+        runner.start_job.assert_called_once_with("crawler", force=False, bank_code="BCA")
 
     @pytest.mark.asyncio
     async def test_trigger_unknown_agent(self):
