@@ -15,6 +15,8 @@ class MissingConfigError(Exception):
 @dataclass(frozen=True)
 class CeresConfig:
     database_url: str
+    redis_url: str = "redis://localhost:6379"
+    max_workers: int = 3
     anthropic_api_key: Optional[str] = None
     proxy_api_key: Optional[str] = None
     captcha_api_key: Optional[str] = None
@@ -36,6 +38,8 @@ class CeresConfig:
 
         kwargs: dict = {
             "database_url": database_url,
+            "redis_url": os.environ.get("REDIS_URL", "redis://localhost:6379"),
+            "max_workers": int(os.environ.get("CERES_MAX_WORKERS", "3")),
             "anthropic_api_key": os.environ.get("ANTHROPIC_API_KEY") or None,
             "proxy_api_key": os.environ.get("PROXY_API_KEY") or None,
             "captcha_api_key": os.environ.get("CAPTCHA_API_KEY") or None,
