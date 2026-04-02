@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import io
+import re
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 
 def _iso(value: object) -> str | None:
@@ -280,6 +282,47 @@ async def list_crawl_logs(
 # ------------------------------------------------------------------
 
 
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+MAX_EXPORT_ROWS = 10_000
+
+
+def _build_loan_program_query(
+    *,
+    bank_id: Optional[str],
+    loan_type: Optional[str],
+    date_from: Optional[str],
+    date_to: Optional[str],
+) -> tuple[str, list, int]:
+    """Build WHERE clause for loan_programs queries. Returns (where, params, next_param_idx)."""
+    conditions: list[str] = ["lp.is_latest = true"]
+    params: list = []
+    param_idx = 1
+
+    if bank_id is not None:
+        conditions.append(f"lp.bank_id = ${param_idx}::uuid")
+        params.append(bank_id)
+        param_idx += 1
+
+    if loan_type is not None:
+        conditions.append(f"lp.loan_type = ${param_idx}")
+        params.append(loan_type)
+        param_idx += 1
+
+    if date_from is not None:
+        conditions.append(f"lp.created_at >= ${param_idx}::date")
+        params.append(date_from)
+        param_idx += 1
+
+    if date_to is not None:
+        conditions.append(f"lp.created_at < (${param_idx}::date + interval '1 day')")
+        params.append(date_to)
+        param_idx += 1
+
+    where = f"WHERE {' AND '.join(conditions)}"
+    return where, params, param_idx
+
+
 @router.get("/loan-programs")
 async def list_loan_programs(
     request: Request,
@@ -288,39 +331,41 @@ async def list_loan_programs(
     bank_id: Optional[str] = Query(None),
     loan_type: Optional[str] = Query(None),
     sort: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
 ) -> dict:
-    """Paginated loan programs with bank_id, loan_type, and sort params."""
+    """Paginated loan programs with bank_id, loan_type, date range, and sort params."""
+    for label, val in [("date_from", date_from), ("date_to", date_to)]:
+        if val is not None and not _DATE_RE.match(val):
+            return JSONResponse(
+                status_code=400,
+                content={"error": f"Invalid {label} format. Use YYYY-MM-DD."},
+            )
+
     db = request.app.state.db
     offset = (page - 1) * limit
 
-    conditions: list[str] = ["is_latest = true"]
-    params: list = []
-    param_idx = 1
-
-    if bank_id is not None:
-        conditions.append(f"bank_id = ${param_idx}::uuid")
-        params.append(bank_id)
-        param_idx += 1
-
-    if loan_type is not None:
-        conditions.append(f"loan_type = ${param_idx}")
-        params.append(loan_type)
-        param_idx += 1
-
-    where = f"WHERE {' AND '.join(conditions)}"
+    where, params, param_idx = _build_loan_program_query(
+        bank_id=bank_id, loan_type=loan_type, date_from=date_from, date_to=date_to,
+    )
 
     # Validate sort column
-    order_col = "program_name"
+    order_col = "lp.program_name"
     if sort is not None and sort in ALLOWED_LOAN_SORTS:
-        order_col = sort
+        order_col = f"lp.{sort}"
 
     total = await db.pool.fetchval(
-        f"SELECT COUNT(*) FROM loan_programs {where}", *params,
+        f"""SELECT COUNT(*) FROM loan_programs lp
+            JOIN banks b ON b.id = lp.bank_id
+            {where}""",
+        *params,
     )
 
     rows = await db.pool.fetch(
         f"""
-        SELECT * FROM loan_programs {where}
+        SELECT lp.*, b.bank_code FROM loan_programs lp
+        JOIN banks b ON b.id = lp.bank_id
+        {where}
         ORDER BY {order_col}
         LIMIT ${param_idx} OFFSET ${param_idx + 1}
         """,
@@ -328,6 +373,91 @@ async def list_loan_programs(
     )
 
     return _paginated([dict(r) for r in rows], total=total, page=page, limit=limit)
+
+
+@router.get("/loan-programs/export")
+async def export_loan_programs(
+    request: Request,
+    bank_id: Optional[str] = Query(None),
+    loan_type: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+) -> StreamingResponse:
+    """Export loan programs as XLSX with current filters applied."""
+    for label, val in [("date_from", date_from), ("date_to", date_to)]:
+        if val is not None and not _DATE_RE.match(val):
+            return JSONResponse(
+                status_code=400,
+                content={"error": f"Invalid {label} format. Use YYYY-MM-DD."},
+            )
+
+    db = request.app.state.db
+
+    where, params, _ = _build_loan_program_query(
+        bank_id=bank_id, loan_type=loan_type, date_from=date_from, date_to=date_to,
+    )
+
+    total = await db.pool.fetchval(
+        f"SELECT COUNT(*) FROM loan_programs lp {where}", *params,
+    )
+    if total > MAX_EXPORT_ROWS:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Too many rows ({total}). Apply filters to narrow the export."},
+        )
+
+    rows = await db.pool.fetch(
+        f"""
+        SELECT lp.program_name, b.bank_code, lp.loan_type,
+               lp.min_interest_rate, lp.max_interest_rate,
+               lp.min_amount, lp.max_amount,
+               lp.min_tenor_months, lp.max_tenor_months,
+               lp.data_confidence, lp.completeness_score,
+               lp.source_url, lp.created_at
+        FROM loan_programs lp
+        JOIN banks b ON b.id = lp.bank_id
+        {where}
+        ORDER BY b.bank_code, lp.program_name
+        """,
+        *params,
+    )
+
+    from openpyxl import Workbook
+
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet()
+    ws.append([
+        "Program Name", "Bank", "Loan Type",
+        "Min Rate (%)", "Max Rate (%)",
+        "Min Amount", "Max Amount",
+        "Min Tenor (mo)", "Max Tenor (mo)",
+        "Confidence", "Completeness",
+        "Source URL", "Created At",
+    ])
+    for r in rows:
+        ws.append([
+            r["program_name"], r["bank_code"], r["loan_type"],
+            float(r["min_interest_rate"]) if r["min_interest_rate"] else None,
+            float(r["max_interest_rate"]) if r["max_interest_rate"] else None,
+            float(r["min_amount"]) if r["min_amount"] else None,
+            float(r["max_amount"]) if r["max_amount"] else None,
+            r["min_tenor_months"], r["max_tenor_months"],
+            float(r["data_confidence"]) if r["data_confidence"] else None,
+            float(r["completeness_score"]) if r["completeness_score"] else None,
+            r["source_url"],
+            r["created_at"].isoformat() if r["created_at"] else None,
+        ])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="loan-programs-{today}.xlsx"'},
+    )
 
 
 # ------------------------------------------------------------------
