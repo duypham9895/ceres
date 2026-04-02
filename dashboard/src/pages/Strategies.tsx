@@ -145,31 +145,21 @@ export default function Strategies() {
   };
 
   const bulkRebuild = async () => {
-    const banks = [...selectedBanks];
     setIsBulkRunning(true);
-    setBulkStatus(`Rebuilding 0/${banks.length}...`);
-    let succeeded = 0;
-    const failed: string[] = [];
-
-    for (let i = 0; i < banks.length; i++) {
-      setBulkStatus(`Rebuilding ${i + 1}/${banks.length}...`);
-      try {
-        await apiPost(`/api/crawl/strategist?bank=${banks[i]}`);
-        succeeded++;
-      } catch {
-        failed.push(banks[i]);
+    setBulkStatus('Rebuilding all selected banks...');
+    try {
+      const resp = await apiPost<{ queued: number; total_banks: number; failed: string[] }>(
+        '/api/strategies/rebuild-all'
+      );
+      if (resp.failed.length === 0) {
+        setBulkStatus(`✓ Queued ${resp.queued} banks for rebuild`);
+        clearSelection();
+      } else {
+        setBulkStatus(`⚠ Queued ${resp.queued}/${resp.total_banks} — ${resp.failed.length} failed to queue`);
       }
+    } catch {
+      setBulkStatus('✗ Failed to trigger rebuild');
     }
-
-    if (failed.length === 0) {
-      setBulkStatus(`✓ Rebuilt ${succeeded}/${banks.length} banks`);
-      clearSelection();
-    } else if (succeeded === 0 && banks.length > 0) {
-      setBulkStatus(`✗ Rebuild failed — ${failed.length} banks failed (${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '...' : ''})`);
-    } else {
-      setBulkStatus(`⚠ Rebuilt ${succeeded}/${banks.length} banks — ${failed.length} failed (${failed.join(', ')})`);
-    }
-
     setIsBulkRunning(false);
     setTimeout(() => setBulkStatus(null), 8000);
   };
