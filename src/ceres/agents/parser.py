@@ -58,7 +58,7 @@ class ParserAgent(BaseAgent):
 
         for raw in rows:
             try:
-                programs = self._parse_page(raw)
+                programs = await self._parse_page(raw)
                 for program in programs:
                     await self.db.upsert_loan_program(**program)
                     programs_parsed += 1
@@ -70,7 +70,7 @@ class ParserAgent(BaseAgent):
 
         return {"programs_parsed": programs_parsed, "errors": errors}
 
-    def _parse_page(self, raw: dict) -> list[dict]:
+    async def _parse_page(self, raw: dict) -> list[dict]:
         """Extract loan programs from a single raw HTML row.
 
         Tries selector-based extraction first. Falls back to LLM extraction
@@ -99,10 +99,13 @@ class ParserAgent(BaseAgent):
                         programs.append(program)
 
         if not programs and self._llm_extractor is not None:
-            llm_data = _run_sync(
-                self._llm_extractor.extract_loan_data(
-                    raw["raw_html"], raw["bank_name"]
-                )
+            logger.info(
+                "LLM fallback for %s (%s)",
+                raw.get("bank_code", "?"),
+                raw.get("page_url", "?"),
+            )
+            llm_data = await self._llm_extractor.extract_loan_data(
+                raw["raw_html"], raw.get("bank_name", "Unknown Bank")
             )
             for prog_data in llm_data.get("programs", []):
                 program = self._build_program_from_llm(prog_data, raw)
