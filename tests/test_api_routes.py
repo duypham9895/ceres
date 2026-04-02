@@ -26,7 +26,7 @@ class TestDashboardRoute:
         ])
         db.fetch_loan_programs = AsyncMock(return_value=[])
         db.get_crawl_stats = AsyncMock(return_value={
-            "total_crawls": 10, "successes": 8, "failures": 2,
+            "total_crawls": 10, "successful": 8, "failed": 2,
             "blocked": 0, "banks_crawled": 1, "total_programs_found": 5,
         })
         app = make_test_app(db)

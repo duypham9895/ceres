@@ -108,7 +108,7 @@ async def dashboard_overview(request: Request) -> dict:
     stats = await db.get_crawl_stats()
 
     total_crawls = stats.get("total_crawls", 0)
-    successes = stats.get("successes", 0)
+    successes = stats.get("successful", 0)
     success_rate = successes / total_crawls if total_crawls > 0 else 0.0
 
     # Count banks by status without mutation

@@ -27,12 +27,12 @@ interface LoanProgram {
   loan_type: string;
   min_interest_rate: number | null;
   max_interest_rate: number | null;
-  last_updated_at: string;
+  updated_at: string;
 }
 
 interface CrawlLog {
   id: number;
-  agent: string;
+  pages_crawled: number | null;
   status: string;
   started_at: string;
   finished_at: string | null;
@@ -256,7 +256,7 @@ export default function BankDetail() {
                       ? `${program.min_interest_rate}% - ${program.max_interest_rate}%`
                       : '-'}
                   </td>
-                  <td className="px-4 py-3 text-sm text-text-secondary">{formatDate(program.last_updated_at)}</td>
+                  <td className="px-4 py-3 text-sm text-text-secondary">{formatDate(program.updated_at)}</td>
                 </tr>
               ))}
             </tbody>
@@ -275,7 +275,7 @@ export default function BankDetail() {
           <table className="min-w-full divide-y divide-border">
             <thead className="bg-bg-card">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Agent</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Pages</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Started</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Finished</th>
@@ -285,7 +285,7 @@ export default function BankDetail() {
             <tbody className="divide-y divide-border">
               {crawl_logs.map((log) => (
                 <tr key={log.id} className="hover:bg-bg-hover">
-                  <td className="px-4 py-3 text-sm text-text-heading">{log.agent}</td>
+                  <td className="px-4 py-3 text-sm font-[var(--font-mono)] text-text-secondary">{log.pages_crawled ?? '-'}</td>
                   <td className="px-4 py-3 text-sm"><StatusBadge status={log.status} /></td>
                   <td className="px-4 py-3 text-sm text-text-secondary">{formatDate(log.started_at)}</td>
                   <td className="px-4 py-3 text-sm text-text-secondary">{formatDate(log.finished_at)}</td>
