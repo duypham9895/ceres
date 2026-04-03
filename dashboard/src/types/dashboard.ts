@@ -52,7 +52,7 @@ export interface CrawlAnalytics {
     readonly programs_new: number;
   };
   readonly error_breakdown: Record<string, number>;
-  readonly daily_success_rate: readonly Array<{
+  readonly daily_success_rate: ReadonlyArray<{
     readonly date: string;
     readonly rate: number;
   }>;

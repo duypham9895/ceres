@@ -1,5 +1,3 @@
-import clsx from 'clsx';
-
 interface SparklineBarProps {
   readonly data: number[];
   readonly color?: string;
