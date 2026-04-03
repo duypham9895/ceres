@@ -147,6 +147,7 @@ CREATE TABLE crawl_raw_data (
     page_url VARCHAR(500) NOT NULL,
     raw_html TEXT,
     parsed BOOLEAN DEFAULT false,
+    programs_produced INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -181,6 +182,7 @@ CREATE TABLE ringkas_recommendations (
     summary TEXT,
     suggested_actions JSONB DEFAULT '[]',
     status VARCHAR(20) DEFAULT 'pending',
+    status_note VARCHAR(500),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
