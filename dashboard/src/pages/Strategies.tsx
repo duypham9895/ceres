@@ -1,8 +1,15 @@
 import { Fragment, useState, useRef, useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { apiFetch, apiPost } from '../api/client';
+import type { PaginatedResponse } from '../api/client';
 import { formatShortDateTime } from '../utils/format';
 import CrawlButton from '../components/CrawlButton';
+import SummaryStrip from '../components/SummaryStrip';
+import SparklineBar from '../components/SparklineBar';
+import { useFilterState } from '../hooks/useFilterState';
+import { STRATEGY_FILTERS } from '../config/filters';
+import FilterBar from '../components/filters/FilterBar';
 
 interface Strategy {
   readonly bank_code: string;
@@ -12,6 +19,7 @@ interface Strategy {
   readonly success_rate: number;
   readonly version: number;
   readonly updated_at: string;
+  readonly success_trend?: number[];
 }
 
 interface AgentRun {
@@ -72,17 +80,30 @@ function AntiBotBadge({ type }: { readonly type: string | null }) {
   );
 }
 
+const LIMIT = 20;
+
 export default function Strategies() {
+  const {
+    filters, setFilter, setFilters, clearAll, clearFilter,
+    toQueryString, activeCount, page, setPage,
+  } = useFilterState(STRATEGY_FILTERS);
   const [expandedBank, setExpandedBank] = useState<string | null>(null);
   const [selectedBanks, setSelectedBanks] = useState<ReadonlySet<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<string | null>(null);
   const [isBulkRunning, setIsBulkRunning] = useState(false);
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['strategies'],
-    queryFn: () => apiFetch<{ data: Strategy[] }>('/api/strategies').then(r => r.data),
+  const queryString = toQueryString();
+  const paginatedQuery = queryString
+    ? `${queryString}&page=${page}&limit=${LIMIT}`
+    : `page=${page}&limit=${LIMIT}`;
+
+  const { data: paginatedData, isLoading, error } = useQuery({
+    queryKey: ['strategies', queryString, page],
+    queryFn: () => apiFetch<PaginatedResponse<Strategy>>(`/api/strategies?${paginatedQuery}`),
   });
+
+  const data = paginatedData?.data;
 
   const { data: agentRuns } = useQuery({
     queryKey: ['agent-runs-latest'],
@@ -95,13 +116,16 @@ export default function Strategies() {
     [data],
   );
 
-  const { totalBanks, avgSuccess, needAttention } = useMemo(() => {
+  const { totalBanks, avgSuccess, needAttention, healthyCount, degradedCount, deadCount } = useMemo(() => {
     const total = sorted.length;
     const avg = total > 0
       ? Math.round((sorted.reduce((sum, s) => sum + s.success_rate, 0) / total) * 100)
       : 0;
     const attention = sorted.filter(s => s.success_rate === 0).length;
-    return { totalBanks: total, avgSuccess: avg, needAttention: attention };
+    const healthy = sorted.filter(s => s.success_rate >= 0.7).length;
+    const degraded = sorted.filter(s => s.success_rate >= 0.3 && s.success_rate < 0.7).length;
+    const dead = sorted.filter(s => s.success_rate < 0.3).length;
+    return { totalBanks: total, avgSuccess: avg, needAttention: attention, healthyCount: healthy, degradedCount: degraded, deadCount: dead };
   }, [sorted]);
 
   const updateHeaderCheckbox = useCallback((selected: ReadonlySet<string>, total: number) => {
@@ -148,20 +172,19 @@ export default function Strategies() {
     setIsBulkRunning(true);
     setBulkStatus('Rebuilding all selected banks...');
     try {
-      const resp = await apiPost<{ queued: number; total_banks: number; failed: string[] }>(
+      const resp = await apiPost<{ queued: string[]; total_banks: number; failed: string[] }>(
         '/api/strategies/rebuild-all'
       );
-      if (resp.failed.length === 0) {
-        setBulkStatus(`✓ Queued ${resp.queued} banks for rebuild`);
-        clearSelection();
-      } else {
-        setBulkStatus(`⚠ Queued ${resp.queued}/${resp.total_banks} — ${resp.failed.length} failed to queue`);
+      if (resp.failed?.length > 0) {
+        toast.error(`Failed to queue: ${resp.failed.join(', ')}`);
       }
+      toast.success(`Queued rebuild for ${resp.queued?.length ?? 0} banks`);
+      clearSelection();
     } catch {
-      setBulkStatus('✗ Failed to trigger rebuild');
+      toast.error('Failed to trigger rebuild');
     }
     setIsBulkRunning(false);
-    setTimeout(() => setBulkStatus(null), 8000);
+    setBulkStatus(null);
   };
 
   if (isLoading) return <p className="text-text-muted">Loading strategies...</p>;
@@ -212,9 +235,24 @@ export default function Strategies() {
         <CrawlButton agent="strategist" label="Run All Strategist" />
       </div>
 
-      <p className="text-sm text-text-muted mb-4">
-        {totalBanks} banks · {avgSuccess}% avg success · {needAttention} need attention
-      </p>
+      <FilterBar
+        config={STRATEGY_FILTERS}
+        filters={filters}
+        onFilterChange={setFilter}
+        onFilterChangeBatch={setFilters}
+        onClearAll={clearAll}
+        onClearFilter={clearFilter}
+        activeCount={activeCount}
+        pageKey="strategies"
+        totalResults={paginatedData?.total}
+      />
+
+      <SummaryStrip items={[
+        { label: 'healthy', value: healthyCount, color: 'green' },
+        { label: 'degraded', value: degradedCount, color: 'yellow' },
+        { label: 'dead', value: deadCount, color: 'red' },
+        { label: `banks (${avgSuccess}% avg success)`, value: totalBanks, color: 'blue' },
+      ]} />
 
       {/* Bulk action bar — visible when banks selected OR status message showing */}
       {(selectedBanks.size > 0 || bulkStatus) && (
@@ -259,6 +297,7 @@ export default function Strategies() {
               <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Bank</th>
               <th className="w-28 px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Status</th>
               <th className="w-24 px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Anti-Bot</th>
+              <th className="w-24 px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Trend</th>
               <th className="w-24 px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Updated</th>
             </tr>
           </thead>
@@ -290,11 +329,22 @@ export default function Strategies() {
                     </td>
                     <td className="w-28 px-4 py-3"><StatusPill rate={strategy.success_rate} /></td>
                     <td className="w-24 px-4 py-3"><AntiBotBadge type={strategy.anti_bot_type} /></td>
+                    <td className="px-4 py-3">
+                      {strategy.success_trend && strategy.success_trend.length > 1 ? (
+                        <SparklineBar
+                          data={strategy.success_trend}
+                          color={strategy.success_rate >= 0.7 ? '#4ade80' : strategy.success_rate >= 0.3 ? '#fbbf24' : '#f87171'}
+                          height={20}
+                        />
+                      ) : (
+                        <span className="text-text-dim text-xs">—</span>
+                      )}
+                    </td>
                     <td className="w-24 px-4 py-3 text-sm text-text-muted">{formatShortDateTime(strategy.updated_at)}</td>
                   </tr>
                   {isExpanded && (
                     <tr className="bg-bg-hover/50">
-                      <td colSpan={5} className="px-12 py-4">
+                      <td colSpan={6} className="px-12 py-4">
                         <div className="flex items-start justify-between">
                           <div className="space-y-2">
                             <div className="flex items-center gap-4 text-sm">
@@ -319,6 +369,34 @@ export default function Strategies() {
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {paginatedData && paginatedData.total > LIMIT && (
+        <div className="flex items-center justify-between mt-4">
+          <p className="text-[12px] text-text-muted">
+            Showing {(page - 1) * LIMIT + 1}-{Math.min(page * LIMIT, paginatedData.total)} of {paginatedData.total}
+          </p>
+          <div className="flex gap-2">
+            <button
+              className="px-3 py-1 text-[12px] border border-border rounded-md text-text-secondary disabled:opacity-50 hover:bg-bg-hover"
+              disabled={page <= 1}
+              onClick={() => setPage(page - 1)}
+            >
+              Previous
+            </button>
+            <span className="px-3 py-1 text-[12px] text-text-muted">
+              Page {page} of {Math.ceil(paginatedData.total / LIMIT)}
+            </span>
+            <button
+              className="px-3 py-1 text-[12px] border border-border rounded-md text-text-secondary disabled:opacity-50 hover:bg-bg-hover"
+              disabled={page >= Math.ceil(paginatedData.total / LIMIT)}
+              onClick={() => setPage(page + 1)}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Quick actions */}
       {needAttention > 0 && selectedBanks.size === 0 && (
