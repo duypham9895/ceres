@@ -118,7 +118,7 @@ function RateTable({ banks }: RateTableProps) {
                   {formatRate(maxRate)}
                 </td>
                 <td className="py-2 px-3 text-center">
-                  {bank.trend_7d !== null ? (
+                  {bank.trend_7d != null && !isNaN(bank.trend_7d) ? (
                     <TrendChip value={bank.trend_7d} />
                   ) : (
                     <span className="text-text-dim">—</span>
@@ -252,7 +252,7 @@ export default function Overview() {
               />
               <KpiCard
                 title="Data Quality"
-                value={`${Math.round((dashboard?.quality_avg ?? 0) * 100)}%`}
+                value={`${Math.round(((dashboard?.quality_avg as unknown as { avg_completeness?: number })?.avg_completeness ?? 0) * 100)}%`}
                 delta="avg completeness"
                 deltaDirection="neutral"
                 sparkline={dashboard?.sparklines.quality as number[]}
