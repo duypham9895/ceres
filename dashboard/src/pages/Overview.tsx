@@ -176,7 +176,7 @@ export default function Overview() {
   // Zone 3 data
   const { data: heatmapData, isLoading: heatmapLoading } = useQuery({
     queryKey: ['heatmap', activeTab],
-    queryFn: () => apiFetch<HeatmapBank[]>(`/api/rates/heatmap?loan_type=${activeTab}`),
+    queryFn: () => apiFetch<{ banks: HeatmapBank[] }>(`/api/rates/heatmap?loan_type=${activeTab}`).then(r => r.banks),
     staleTime: 30_000,
   });
 
