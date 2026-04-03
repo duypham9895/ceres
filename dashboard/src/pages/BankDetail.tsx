@@ -1,9 +1,11 @@
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '../api/client';
+import { toast } from 'sonner';
+import { apiFetch, apiPost } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import CrawlButton from '../components/CrawlButton';
-import { formatDate } from '../utils/format';
+import CompletenessBar from '../components/CompletenessBar';
+import { formatDate, formatRelativeTime } from '../utils/format';
 
 interface BankInfo {
   id: string;
@@ -13,12 +15,18 @@ interface BankInfo {
   bank_type: string;
   website_url: string;
   website_status: string;
+  last_crawled_at: string | null;
+  crawl_streak: number;
+  success_rate_30d: number;
+  avg_quality: number;
+  avg_confidence: number;
 }
 
 interface Strategy {
   bypass_method: string;
   success_rate: number;
   version: string;
+  anti_bot_type: string | null;
 }
 
 interface LoanProgram {
@@ -69,11 +77,13 @@ function PipelineStep({
   state,
   detail,
   message,
+  action,
 }: {
   label: string;
   state: StepState;
   detail: string;
   message?: string;
+  action?: React.ReactNode;
 }) {
   const icons: Record<StepState, string> = {
     success: '✔',
@@ -96,6 +106,7 @@ function PipelineStep({
       <span className="text-sm font-medium text-text-heading w-16 shrink-0">{label}</span>
       <span className="text-sm text-text-secondary">{detail}</span>
       {message && <span className="text-sm text-text-muted italic ml-2">{message}</span>}
+      {action && <span className="ml-auto">{action}</span>}
     </div>
   );
 }
@@ -176,9 +187,91 @@ export default function BankDetail() {
 
   return (
     <div className="space-y-6">
+      {/* Header with CTA buttons */}
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-text-heading">{bank.bank_name}</h2>
-        <CrawlButton agent="daily" label="Crawl This Bank" bank={bank.bank_code} />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() =>
+              apiPost(`/api/crawl/learning?bank=${bank.bank_code}`).then(() =>
+                toast.success('Learning triggered'),
+              )
+            }
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20"
+          >
+            Re-learn Strategy
+          </button>
+          <CrawlButton agent="daily" label="Crawl This Bank" bank={bank.bank_code} />
+        </div>
+      </div>
+
+      {/* 3 Info Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {/* Crawl Health card */}
+        <div className="bg-bg-card rounded-lg shadow p-4">
+          <h3 className="text-sm font-semibold text-text-heading mb-3">Crawl Health</h3>
+          <dl className="space-y-2">
+            <InfoItem label="Success rate (30d)">
+              <span className="font-[var(--font-mono)]">
+                {Math.round((bank.success_rate_30d ?? 0) * 100)}%
+              </span>
+            </InfoItem>
+            <InfoItem label="Crawl streak">
+              <span>🔥 {bank.crawl_streak ?? 0}</span>
+            </InfoItem>
+            <InfoItem label="Last crawled">
+              {bank.last_crawled_at ? formatRelativeTime(bank.last_crawled_at) : '–'}
+            </InfoItem>
+            <InfoItem label="Total crawls">{crawl_logs.length}</InfoItem>
+          </dl>
+        </div>
+
+        {/* Strategy card */}
+        <div className="bg-bg-card rounded-lg shadow p-4">
+          <h3 className="text-sm font-semibold text-text-heading mb-3">Strategy</h3>
+          {strategy ? (
+            <dl className="space-y-2">
+              <InfoItem label="Bypass method">{strategy.bypass_method}</InfoItem>
+              <InfoItem label="Version">{strategy.version}</InfoItem>
+              <InfoItem label="Success rate">
+                <div className="flex items-center gap-2">
+                  <span className="font-[var(--font-mono)] text-xs">
+                    {Math.round(strategy.success_rate * 100)}%
+                  </span>
+                  <CompletenessBar score={strategy.success_rate} width={80} />
+                </div>
+              </InfoItem>
+              {strategy.anti_bot_type && (
+                <InfoItem label="Anti-bot">
+                  <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-warning/10 text-warning border border-warning/20">
+                    {strategy.anti_bot_type}
+                  </span>
+                </InfoItem>
+              )}
+            </dl>
+          ) : (
+            <p className="text-sm text-text-muted">No strategy configured</p>
+          )}
+        </div>
+
+        {/* Data Quality card */}
+        <div className="bg-bg-card rounded-lg shadow p-4">
+          <h3 className="text-sm font-semibold text-text-heading mb-3">Data Quality</h3>
+          <dl className="space-y-2">
+            <InfoItem label="Avg completeness">
+              <CompletenessBar score={bank.avg_quality ?? 0} width={100} />
+            </InfoItem>
+            <InfoItem label="Program count">{programs.length}</InfoItem>
+            <InfoItem label="Avg confidence">
+              <span className="font-[var(--font-mono)]">
+                {Math.round((bank.avg_confidence ?? 0) * 100)}%
+              </span>
+            </InfoItem>
+            <InfoItem label="Website">
+              <StatusBadge status={bank.website_status} />
+            </InfoItem>
+          </dl>
+        </div>
       </div>
 
       {/* Bank Info Card */}
@@ -198,20 +291,6 @@ export default function BankDetail() {
         </dl>
       </div>
 
-      {/* Strategy Card */}
-      {strategy && (
-        <div className="bg-bg-card rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-text-heading mb-4">Strategy</h3>
-          <dl className="grid grid-cols-3 gap-4">
-            <InfoItem label="Bypass Method">{strategy.bypass_method}</InfoItem>
-            <InfoItem label="Success Rate">
-              <span className="font-[var(--font-mono)]">{Math.round(strategy.success_rate * 100)}%</span>
-            </InfoItem>
-            <InfoItem label="Version">{strategy.version}</InfoItem>
-          </dl>
-        </div>
-      )}
-
       {/* Pipeline Status Card */}
       {pipelineSteps && (
         <div className="bg-bg-card rounded-lg shadow p-6">
@@ -222,9 +301,52 @@ export default function BankDetail() {
             )}
           </div>
           <div className="divide-y divide-border">
-            <PipelineStep label="Crawl" state={pipelineSteps.crawlState} detail={pipelineSteps.crawlDetail} message={pipelineSteps.crawlMsg} />
-            <PipelineStep label="Parse" state={pipelineSteps.parseState} detail={pipelineSteps.parseDetail} message={pipelineSteps.parseMsg} />
-            <PipelineStep label="Extract" state={pipelineSteps.extractState} detail={pipelineSteps.extractDetail} message={pipelineSteps.extractMsg} />
+            <PipelineStep
+              label="Crawl"
+              state={pipelineSteps.crawlState}
+              detail={pipelineSteps.crawlDetail}
+              message={pipelineSteps.crawlMsg}
+              action={
+                pipelineSteps.crawlState === 'error' ? (
+                  <button
+                    onClick={() =>
+                      apiPost(`/api/crawl/crawler?bank=${bank.bank_code}`).then(() =>
+                        toast.success('Re-crawl triggered'),
+                      )
+                    }
+                    className="text-xs font-medium text-accent hover:text-accent/80 border border-accent/20 rounded px-2 py-0.5"
+                  >
+                    Re-crawl
+                  </button>
+                ) : undefined
+              }
+            />
+            <PipelineStep
+              label="Parse"
+              state={pipelineSteps.parseState}
+              detail={pipelineSteps.parseDetail}
+              message={pipelineSteps.parseMsg}
+              action={
+                pipelineSteps.parseState === 'error' ? (
+                  <button
+                    onClick={() =>
+                      apiPost(`/api/crawl/parser?bank=${bank.bank_code}`).then(() =>
+                        toast.success('Re-parse triggered'),
+                      )
+                    }
+                    className="text-xs font-medium text-accent hover:text-accent/80 border border-accent/20 rounded px-2 py-0.5"
+                  >
+                    Re-parse
+                  </button>
+                ) : undefined
+              }
+            />
+            <PipelineStep
+              label="Extract"
+              state={pipelineSteps.extractState}
+              detail={pipelineSteps.extractDetail}
+              message={pipelineSteps.extractMsg}
+            />
           </div>
         </div>
       )}
@@ -280,6 +402,7 @@ export default function BankDetail() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Started</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Finished</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Error</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -290,6 +413,21 @@ export default function BankDetail() {
                   <td className="px-4 py-3 text-sm text-text-secondary">{formatDate(log.started_at)}</td>
                   <td className="px-4 py-3 text-sm text-text-secondary">{formatDate(log.finished_at)}</td>
                   <td className="px-4 py-3 text-sm text-error">{log.error_message || '-'}</td>
+                  <td className="px-4 py-3 text-sm">
+                    {(log.status === 'failed' || log.status === 'blocked') && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          apiPost(`/api/crawl/crawler?bank=${bank.bank_code}`).then(() =>
+                            toast.success('Re-crawl triggered'),
+                          );
+                        }}
+                        className="text-[10px] font-medium text-accent hover:text-accent/80"
+                      >
+                        Re-crawl
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

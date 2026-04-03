@@ -328,8 +328,54 @@ async def get_bank_detail(request: Request, bank_id: str):
         },
     }
 
+    # Compute success_rate_30d and avg_quality for the bank detail view
+    health_stats = await db.pool.fetchrow(
+        """
+        SELECT
+            COALESCE(
+                (
+                    SELECT ROUND(
+                        COUNT(*) FILTER (WHERE cl30.status = 'SUCCESS')::numeric /
+                        NULLIF(COUNT(*), 0), 4
+                    )
+                    FROM crawl_logs cl30
+                    WHERE cl30.bank_id = $1::uuid
+                      AND cl30.created_at >= NOW() - INTERVAL '30 days'
+                ),
+                0.0
+            ) AS success_rate_30d,
+            COALESCE(
+                (
+                    SELECT ROUND(AVG(lp_q.completeness_score)::numeric, 4)
+                    FROM loan_programs lp_q
+                    WHERE lp_q.bank_id = $1::uuid AND lp_q.is_latest = true
+                ),
+                0.0
+            ) AS avg_quality,
+            COALESCE(
+                (
+                    SELECT ROUND(AVG(lp_q.data_confidence)::numeric, 4)
+                    FROM loan_programs lp_q
+                    WHERE lp_q.bank_id = $1::uuid AND lp_q.is_latest = true
+                ),
+                0.0
+            ) AS avg_confidence
+        """,
+        bid,
+    )
+
+    bank_dict = dict(bank)
+    if health_stats:
+        bank_dict["success_rate_30d"] = float(health_stats["success_rate_30d"])
+        bank_dict["avg_quality"] = float(health_stats["avg_quality"])
+        bank_dict["avg_confidence"] = float(health_stats["avg_confidence"])
+    else:
+        bank_dict["success_rate_30d"] = 0.0
+        bank_dict["avg_quality"] = 0.0
+        bank_dict["avg_confidence"] = 0.0
+
     return {
-        "bank": dict(bank),
+        "bank": bank_dict,
         "strategy": strategy,
         "programs": [dict(p) for p in programs],
         "crawl_logs": [dict(cl) for cl in crawl_logs],
