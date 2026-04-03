@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 from uuid import UUID
 
@@ -39,6 +39,28 @@ def _error(message: str, *, code: str, status: int) -> JSONResponse:
         {"error": message, "code": code},
         status_code=status,
     )
+
+
+def _add_multi_filter(
+    conditions: list[str], params: list, param_idx: int,
+    column: str, value: str | None,
+) -> int:
+    """Add a multi-value filter (comma-separated) or single-value filter.
+
+    Returns the next param_idx to use.
+    """
+    if value is None:
+        return param_idx
+    values = [v.strip() for v in value.split(",") if v.strip()]
+    if not values:
+        return param_idx
+    if len(values) == 1:
+        conditions.append(f"{column} = ${param_idx}")
+        params.append(values[0])
+    else:
+        conditions.append(f"{column} = ANY(${param_idx}::text[])")
+        params.append(values)
+    return param_idx + 1
 
 
 # ------------------------------------------------------------------
@@ -106,6 +128,8 @@ async def dashboard_overview(request: Request) -> dict:
     banks = await db.fetch_banks()
     programs = await db.fetch_loan_programs()
     stats = await db.get_crawl_stats()
+    quality = await db.get_dashboard_quality()
+    sparklines = await db.get_dashboard_sparklines()
 
     total_crawls = stats.get("total_crawls", 0)
     successes = stats.get("successful", 0)
@@ -117,13 +141,61 @@ async def dashboard_overview(request: Request) -> dict:
         ws = bank.get("website_status", "unknown")
         status_counts = {**status_counts, ws: status_counts.get(ws, 0) + 1}
 
+    # Compute deltas from sparkline series (last vs second-to-last value)
+    banks_series = sparklines.get("banks", [])
+    programs_series = sparklines.get("programs", [])
+    kpr_series = sparklines.get("kpr_rate", [])
+    quality_series = sparklines.get("quality", [])
+
+    banks_week = (banks_series[-1] - banks_series[-8]) if len(banks_series) >= 8 else 0
+    programs_new = stats.get("new_programs", 0)
+    kpr_rate_change = (
+        round(kpr_series[-1] - kpr_series[-2], 4) if len(kpr_series) >= 2 else 0.0
+    )
+    quality_change = (
+        round(quality_series[-1] - quality_series[-2], 4) if len(quality_series) >= 2 else 0.0
+    )
+
     return {
         "total_banks": len(banks),
         "total_programs": len(programs),
         "banks_by_status": status_counts,
         "success_rate": success_rate,
         "crawl_stats": stats,
+        "quality_avg": quality,
+        "sparklines": sparklines,
+        "deltas": {
+            "banks_week": banks_week,
+            "programs_new": programs_new,
+            "kpr_rate_change": kpr_rate_change,
+            "quality_change": quality_change,
+        },
     }
+
+
+@router.get("/dashboard/alerts")
+async def dashboard_alerts(request: Request) -> dict:
+    """Dashboard alert counts grouped by severity."""
+    db = request.app.state.db
+    alerts = await db.get_dashboard_alerts()
+    total = sum(a["count"] for a in alerts)
+    return {"total": total, "alerts": alerts}
+
+
+@router.get("/dashboard/changes")
+async def dashboard_changes(request: Request) -> dict:
+    """Loan program changes detected today."""
+    db = request.app.state.db
+    today = date.today()
+    changes = await db.get_dashboard_changes(today)
+    return {"date": today.isoformat(), "changes": changes}
+
+
+@router.get("/dashboard/quality")
+async def dashboard_quality(request: Request) -> dict:
+    """Overall data quality metrics."""
+    db = request.app.state.db
+    return await db.get_dashboard_quality()
 
 
 # ------------------------------------------------------------------
@@ -137,8 +209,9 @@ async def list_banks(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
     category: Optional[str] = Query(None),
+    website_status: Optional[str] = Query(None),
 ) -> dict:
-    """Paginated bank list with optional category filter, includes program count."""
+    """Paginated bank list with optional category and website_status filters, includes program count."""
     db = request.app.state.db
     offset = (page - 1) * limit
 
@@ -146,10 +219,8 @@ async def list_banks(
     params: list = []
     param_idx = 1
 
-    if category is not None:
-        conditions.append(f"b.bank_category = ${param_idx}")
-        params.append(category)
-        param_idx += 1
+    param_idx = _add_multi_filter(conditions, params, param_idx, "b.bank_category", category)
+    param_idx = _add_multi_filter(conditions, params, param_idx, "b.website_status", website_status)
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
@@ -157,7 +228,30 @@ async def list_banks(
     total = await db.pool.fetchval(count_query, *params)
 
     data_query = f"""
-        SELECT b.*, COUNT(lp.id) AS programs_count
+        SELECT
+            b.*,
+            COUNT(lp.id) AS programs_count,
+            b.crawl_streak,
+            COALESCE(
+                (
+                    SELECT ROUND(
+                        COUNT(*) FILTER (WHERE cl30.status = 'SUCCESS')::numeric /
+                        NULLIF(COUNT(*), 0), 4
+                    )
+                    FROM crawl_logs cl30
+                    WHERE cl30.bank_id = b.id
+                      AND cl30.created_at >= NOW() - INTERVAL '30 days'
+                ),
+                0.0
+            ) AS success_rate_30d,
+            COALESCE(
+                (
+                    SELECT ROUND(AVG(lp_q.completeness_score)::numeric, 4)
+                    FROM loan_programs lp_q
+                    WHERE lp_q.bank_id = b.id AND lp_q.is_latest = true
+                ),
+                0.0
+            ) AS avg_quality
         FROM banks b
         LEFT JOIN loan_programs lp ON lp.bank_id = b.id AND lp.is_latest = true
         {where}
@@ -248,6 +342,16 @@ async def get_bank_detail(request: Request, bank_id: str):
 # ------------------------------------------------------------------
 
 
+@router.get("/crawl-logs/analytics")
+async def crawl_log_analytics(
+    request: Request,
+    days: int = Query(7, ge=1, le=90),
+) -> dict:
+    """Aggregated crawl analytics over N days."""
+    db = request.app.state.db
+    return await db.get_crawl_analytics(days=days)
+
+
 @router.get("/crawl-logs")
 async def list_crawl_logs(
     request: Request,
@@ -266,10 +370,7 @@ async def list_crawl_logs(
     params: list = []
     param_idx = 1
 
-    if status is not None:
-        conditions.append(f"cl.status = ${param_idx}")
-        params.append(status)
-        param_idx += 1
+    param_idx = _add_multi_filter(conditions, params, param_idx, "cl.status", status)
 
     if bank_id is not None:
         conditions.append(f"cl.bank_id = ${param_idx}::uuid")
@@ -312,6 +413,17 @@ async def list_crawl_logs(
 # ------------------------------------------------------------------
 
 
+@router.get("/loan-programs/compare")
+async def loan_programs_compare(
+    request: Request,
+    loan_type: str = Query(...),
+) -> dict:
+    """Compare loan programs across banks for a given loan type."""
+    db = request.app.state.db
+    programs = await db.get_loan_compare(loan_type)
+    return {"loan_type": loan_type, "programs": programs}
+
+
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 MAX_EXPORT_ROWS = 10_000
@@ -323,6 +435,8 @@ def _build_loan_program_query(
     loan_type: Optional[str],
     date_from: Optional[str],
     date_to: Optional[str],
+    rate_min: Optional[float] = None,
+    rate_max: Optional[float] = None,
 ) -> tuple[str, list, int]:
     """Build WHERE clause for loan_programs queries. Returns (where, params, next_param_idx)."""
     conditions: list[str] = ["lp.is_latest = true"]
@@ -334,10 +448,7 @@ def _build_loan_program_query(
         params.append(bank_id)
         param_idx += 1
 
-    if loan_type is not None:
-        conditions.append(f"lp.loan_type = ${param_idx}")
-        params.append(loan_type)
-        param_idx += 1
+    param_idx = _add_multi_filter(conditions, params, param_idx, "lp.loan_type", loan_type)
 
     if date_from is not None:
         conditions.append(f"lp.created_at >= ${param_idx}::date")
@@ -347,6 +458,16 @@ def _build_loan_program_query(
     if date_to is not None:
         conditions.append(f"lp.created_at < (${param_idx}::date + interval '1 day')")
         params.append(date_to)
+        param_idx += 1
+
+    if rate_min is not None:
+        conditions.append(f"lp.min_interest_rate >= ${param_idx}")
+        params.append(rate_min)
+        param_idx += 1
+
+    if rate_max is not None:
+        conditions.append(f"lp.max_interest_rate <= ${param_idx}")
+        params.append(rate_max)
         param_idx += 1
 
     where = f"WHERE {' AND '.join(conditions)}"
@@ -363,8 +484,10 @@ async def list_loan_programs(
     sort: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    rate_min: Optional[float] = Query(None),
+    rate_max: Optional[float] = Query(None),
 ) -> dict:
-    """Paginated loan programs with bank_id, loan_type, date range, and sort params."""
+    """Paginated loan programs with bank_id, loan_type, date range, rate range, and sort params."""
     for label, val in [("date_from", date_from), ("date_to", date_to)]:
         if val is not None and not _DATE_RE.match(val):
             return JSONResponse(
@@ -372,11 +495,19 @@ async def list_loan_programs(
                 content={"error": f"Invalid {label} format. Use YYYY-MM-DD."},
             )
 
+    if rate_min is not None and rate_max is not None and rate_min > rate_max:
+        return _error(
+            "rate_min must be less than or equal to rate_max",
+            code="INVALID_RATE_RANGE",
+            status=400,
+        )
+
     db = request.app.state.db
     offset = (page - 1) * limit
 
     where, params, param_idx = _build_loan_program_query(
         bank_id=bank_id, loan_type=loan_type, date_from=date_from, date_to=date_to,
+        rate_min=rate_min, rate_max=rate_max,
     )
 
     # Validate sort column
@@ -393,7 +524,13 @@ async def list_loan_programs(
 
     rows = await db.pool.fetch(
         f"""
-        SELECT lp.*, b.bank_code FROM loan_programs lp
+        SELECT lp.*,
+               b.bank_code,
+               lp.rate_fixed,
+               lp.rate_floating,
+               lp.rate_promo,
+               lp.rate_promo_duration_months
+        FROM loan_programs lp
         JOIN banks b ON b.id = lp.bank_id
         {where}
         ORDER BY {order_col}
@@ -412,6 +549,8 @@ async def export_loan_programs(
     loan_type: Optional[str] = Query(None),
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
+    rate_min: Optional[float] = Query(None),
+    rate_max: Optional[float] = Query(None),
 ) -> StreamingResponse:
     """Export loan programs as XLSX with current filters applied."""
     for label, val in [("date_from", date_from), ("date_to", date_to)]:
@@ -421,10 +560,18 @@ async def export_loan_programs(
                 content={"error": f"Invalid {label} format. Use YYYY-MM-DD."},
             )
 
+    if rate_min is not None and rate_max is not None and rate_min > rate_max:
+        return _error(
+            "rate_min must be less than or equal to rate_max",
+            code="INVALID_RATE_RANGE",
+            status=400,
+        )
+
     db = request.app.state.db
 
     where, params, _ = _build_loan_program_query(
         bank_id=bank_id, loan_type=loan_type, date_from=date_from, date_to=date_to,
+        rate_min=rate_min, rate_max=rate_max,
     )
 
     total = await db.pool.fetchval(
@@ -496,21 +643,97 @@ async def export_loan_programs(
 
 
 @router.get("/strategies")
-async def list_strategies(request: Request) -> dict:
-    """All active strategies joined with bank info."""
+async def list_strategies(
+    request: Request,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    bank_id: Optional[str] = Query(None),
+    success_rate_min: Optional[float] = Query(None),
+    success_rate_max: Optional[float] = Query(None),
+) -> dict:
+    """Paginated active strategies with optional bank_id and success_rate filters."""
     db = request.app.state.db
+    offset = (page - 1) * limit
+
+    conditions: list[str] = ["bs.is_active = true"]
+    params: list = []
+    param_idx = 1
+
+    if bank_id is not None:
+        bank_ids = [v.strip() for v in bank_id.split(",") if v.strip()]
+        if len(bank_ids) == 1:
+            conditions.append(f"bs.bank_id = ${param_idx}::uuid")
+            params.append(bank_ids[0])
+        else:
+            conditions.append(f"bs.bank_id = ANY(${param_idx}::uuid[])")
+            params.append(bank_ids)
+        param_idx += 1
+
+    if success_rate_min is not None:
+        conditions.append(f"bs.success_rate >= ${param_idx}")
+        params.append(success_rate_min)
+        param_idx += 1
+
+    if success_rate_max is not None:
+        conditions.append(f"bs.success_rate <= ${param_idx}")
+        params.append(success_rate_max)
+        param_idx += 1
+
+    where = f"WHERE {' AND '.join(conditions)}"
+
+    total = await db.pool.fetchval(
+        f"""SELECT COUNT(*) FROM bank_strategies bs
+            JOIN banks b ON b.id = bs.bank_id
+            {where}""",
+        *params,
+    )
 
     rows = await db.pool.fetch(
-        """
+        f"""
         SELECT bs.*, b.bank_code, b.bank_name
         FROM bank_strategies bs
         JOIN banks b ON b.id = bs.bank_id
-        WHERE bs.is_active = true
+        {where}
         ORDER BY b.bank_code
-        """
+        LIMIT ${param_idx} OFFSET ${param_idx + 1}
+        """,
+        *params, limit, offset,
     )
 
-    return {"data": [dict(r) for r in rows]}
+    # Fetch 30-day daily success trends for each strategy's bank
+    bank_ids = list({str(r["bank_id"]) for r in rows})
+    trend_rows: list = []
+    if bank_ids:
+        trend_rows = await db.pool.fetch(
+            """
+            SELECT
+                cl.bank_id::text,
+                DATE(cl.created_at) AS day,
+                ROUND(
+                    COUNT(*) FILTER (WHERE cl.status = 'SUCCESS')::numeric /
+                    NULLIF(COUNT(*), 0), 4
+                ) AS rate
+            FROM crawl_logs cl
+            WHERE cl.bank_id = ANY($1::uuid[])
+              AND cl.created_at >= NOW() - INTERVAL '30 days'
+            GROUP BY cl.bank_id, DATE(cl.created_at)
+            ORDER BY cl.bank_id, day
+            """,
+            bank_ids,
+        )
+
+    # Build bank_id -> list of daily rates mapping
+    trend_map: dict[str, list[float]] = {}
+    for tr in trend_rows:
+        bid = tr["bank_id"]
+        trend_map[bid] = [*trend_map.get(bid, []), float(tr["rate"])]
+
+    data = [
+        {**dict(r), "success_trend": trend_map.get(str(r["bank_id"]), [])}
+        for r in rows
+    ]
+
+    return _paginated(data, total=total, page=page, limit=limit)
 
 
 # ------------------------------------------------------------------
@@ -518,16 +741,63 @@ async def list_strategies(request: Request) -> dict:
 # ------------------------------------------------------------------
 
 
-@router.get("/recommendations")
-async def list_recommendations(request: Request) -> dict:
-    """All recommendations ordered by priority."""
-    db = request.app.state.db
+ALLOWED_REC_SORTS = frozenset({"priority", "created_at", "updated_at", "status"})
 
-    rows = await db.pool.fetch(
-        "SELECT * FROM ringkas_recommendations ORDER BY priority ASC"
+
+@router.get("/recommendations")
+async def list_recommendations(
+    request: Request,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    status: Optional[str] = Query(None),
+    sort: Optional[str] = Query(None),
+) -> dict:
+    """Paginated recommendations with optional status filter and sort."""
+    db = request.app.state.db
+    offset = (page - 1) * limit
+
+    conditions: list[str] = []
+    params: list = []
+    param_idx = 1
+
+    param_idx = _add_multi_filter(conditions, params, param_idx, "status", status)
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    order_col = "priority"
+    if sort is not None and sort in ALLOWED_REC_SORTS:
+        order_col = sort
+
+    total = await db.pool.fetchval(
+        f"SELECT COUNT(*) FROM ringkas_recommendations {where}", *params,
     )
 
-    return {"data": [dict(r) for r in rows]}
+    rows = await db.pool.fetch(
+        f"""
+        SELECT * FROM ringkas_recommendations
+        {where}
+        ORDER BY {order_col} ASC
+        LIMIT ${param_idx} OFFSET ${param_idx + 1}
+        """,
+        *params, limit, offset,
+    )
+
+    return _paginated([dict(r) for r in rows], total=total, page=page, limit=limit)
+
+
+@router.patch("/recommendations/{rec_id}")
+async def update_recommendation(request: Request, rec_id: UUID):
+    """Update status and/or status_note on a recommendation."""
+    body = await request.json()
+    status = body.get("status")
+    status_note = body.get("status_note")
+    valid_statuses = {"pending", "reviewed", "in_progress", "done", "dismissed"}
+    if status and status not in valid_statuses:
+        return _error(f"Invalid status: {status}", code="INVALID_STATUS", status=400)
+    db = request.app.state.db
+    result = await db.update_recommendation(rec_id, status=status, status_note=status_note)
+    if not result:
+        return _error("Recommendation not found", code="NOT_FOUND", status=404)
+    return result
 
 
 # ------------------------------------------------------------------
@@ -544,6 +814,106 @@ async def latest_agent_runs(request: Request) -> dict:
 
 
 # ------------------------------------------------------------------
+# Pipeline Health
+# ------------------------------------------------------------------
+
+
+_FAILING_THRESHOLD = 0.3
+
+
+@router.get("/pipeline-health")
+async def pipeline_health(
+    request: Request,
+    days: int = Query(7, ge=1, le=90),
+) -> dict:
+    """Pipeline health metrics: crawl and parse success rates per bank, strategy health."""
+    db = request.app.state.db
+
+    crawl_stats = await db.get_crawl_stats(days=days)
+    bank_crawl_stats = await db.get_bank_crawl_stats(days=days)
+    parse_stats = await db.get_parse_stats(days=days)
+    strategies = await db.fetch_active_strategies()
+
+    total_crawls = crawl_stats.get("total_crawls", 0)
+    successful_crawls = crawl_stats.get("successful", 0)
+    crawl_success_rate = (
+        successful_crawls / total_crawls if total_crawls > 0 else 0.0
+    )
+
+    crawl_by_bank = [
+        {
+            "bank_code": row["bank_code"],
+            "success_rate": (
+                row["successful"] / row["total_crawls"]
+                if row["total_crawls"] > 0
+                else 0.0
+            ),
+            "total": row["total_crawls"],
+            "failed": row["failed"],
+            "blocked": row["blocked"],
+        }
+        for row in bank_crawl_stats
+    ]
+
+    total_raw = sum(row["total_raw_rows"] for row in parse_stats)
+    total_with_programs = sum(row["rows_with_programs"] for row in parse_stats)
+    parse_success_rate = (
+        total_with_programs / total_raw if total_raw > 0 else 0.0
+    )
+
+    parse_by_bank = [
+        {
+            "bank_code": row["bank_code"],
+            "total": row["total_raw_rows"],
+            "parsed": row["parsed_rows"],
+            "with_programs": row["rows_with_programs"],
+            "success_rate": (
+                row["rows_with_programs"] / row["total_raw_rows"]
+                if row["total_raw_rows"] > 0
+                else 0.0
+            ),
+        }
+        for row in parse_stats
+    ]
+
+    active_strategies = [dict(s) for s in strategies]
+    rates = [
+        float(s.get("success_rate", 0))
+        for s in active_strategies
+        if s.get("success_rate") is not None
+    ]
+    avg_success_rate = sum(rates) / len(rates) if rates else 0.0
+
+    failing = [
+        {
+            "bank_code": s.get("bank_code"),
+            "success_rate": float(s.get("success_rate", 0)),
+            "anti_bot_detected": s.get("anti_bot_detected", False),
+        }
+        for s in active_strategies
+        if float(s.get("success_rate", 0)) < _FAILING_THRESHOLD
+    ]
+
+    return {
+        "crawl": {
+            "overall_success_rate": round(crawl_success_rate, 4),
+            "total_crawls": total_crawls,
+            "by_bank": crawl_by_bank,
+        },
+        "parse": {
+            "overall_success_rate": round(parse_success_rate, 4),
+            "total_raw_rows": total_raw,
+            "by_bank": parse_by_bank,
+        },
+        "strategies": {
+            "total_active": len(active_strategies),
+            "avg_success_rate": round(avg_success_rate, 4),
+            "failing": failing,
+        },
+    }
+
+
+# ------------------------------------------------------------------
 # Rate Intelligence
 # ------------------------------------------------------------------
 
@@ -556,7 +926,9 @@ async def rates_heatmap(request: Request) -> dict:
     rows = await db.pool.fetch(
         """
         SELECT b.id AS bank_id, b.bank_code, b.bank_name, b.website_status,
-               lp.loan_type, MIN(lp.min_interest_rate) AS min_rate
+               lp.loan_type, MIN(lp.min_interest_rate) AS min_rate,
+               ROUND(AVG(lp.completeness_score)::numeric, 4) AS completeness_score,
+               ROUND(AVG(lp.data_confidence)::numeric, 4) AS data_confidence
         FROM banks b
         LEFT JOIN loan_programs lp ON lp.bank_id = b.id AND lp.is_latest = true
         GROUP BY b.id, b.bank_code, b.bank_name, b.website_status, lp.loan_type
@@ -574,6 +946,12 @@ async def rates_heatmap(request: Request) -> dict:
                 "bank_name": row["bank_name"],
                 "website_status": row["website_status"],
                 "rates": {},
+                "completeness_score": (
+                    float(row["completeness_score"]) if row["completeness_score"] is not None else None
+                ),
+                "data_confidence": (
+                    float(row["data_confidence"]) if row["data_confidence"] is not None else None
+                ),
             }
         if row["loan_type"] and row["min_rate"] is not None:
             banks[code]["rates"][row["loan_type"]] = float(row["min_rate"])
@@ -622,22 +1000,28 @@ async def rates_trend(
 
 @router.post("/strategies/rebuild-all")
 async def rebuild_all_strategies(request: Request) -> JSONResponse:
-    """Enqueue strategy rebuild for all active banks with force=True."""
+    """Enqueue strategy rebuild for all active banks with force=True.
+
+    Uses batch enqueue when arq is available for a single Redis round-trip.
+    """
     db = request.app.state.db
     runner = request.app.state.task_runner
 
     banks = await db.fetch_banks()
     active_banks = [b for b in banks if b.get("website_status") in ("active", "unknown")]
 
-    queued = 0
-    failed_banks: list[str] = []
+    jobs = await runner.enqueue_batch(
+        agent="strategist",
+        bank_codes=[b["bank_code"] for b in active_banks],
+        force=True,
+    )
 
-    for bank in active_banks:
-        job = await runner.start_job("strategist", bank_code=bank["bank_code"], force=True)
-        if job is not None:
-            queued += 1
-        else:
-            failed_banks.append(bank["bank_code"])
+    queued = sum(1 for j in jobs if j is not None)
+    failed_banks = [
+        b["bank_code"]
+        for b, j in zip(active_banks, jobs)
+        if j is None
+    ]
 
     return JSONResponse(
         {"queued": queued, "total_banks": len(active_banks), "failed": failed_banks},

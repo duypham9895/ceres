@@ -1263,3 +1263,33 @@ class Database:
             "kpr_rate": [round(float(r["avg_rate"]), 2) for r in kpr_rows],
             "quality": [round(float(r["avg_quality"]), 4) for r in quality_rows],
         }
+
+    async def update_recommendation(
+        self,
+        rec_id: Any,
+        *,
+        status: Optional[str] = None,
+        status_note: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Update status and/or status_note on a recommendation. Returns updated row or None."""
+        updates: list[str] = []
+        params: list = []
+        idx = 1
+        if status is not None:
+            updates.append(f"status = ${idx}")
+            params.append(status)
+            idx += 1
+        if status_note is not None:
+            updates.append(f"status_note = ${idx}")
+            params.append(status_note)
+            idx += 1
+        if not updates:
+            return None
+        updates.append("updated_at = NOW()")
+        params.append(rec_id)
+        query = (
+            f"UPDATE ringkas_recommendations SET {', '.join(updates)} "
+            f"WHERE id = ${idx} RETURNING *"
+        )
+        row = await self.pool.fetchrow(query, *params)
+        return dict(row) if row else None
