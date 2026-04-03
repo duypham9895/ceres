@@ -965,21 +965,32 @@ async def pipeline_health(
 
 
 @router.get("/rates/heatmap")
-async def rates_heatmap(request: Request) -> dict:
+async def rates_heatmap(
+    request: Request,
+    loan_type: Optional[str] = Query(None),
+) -> dict:
     """Rate heatmap: all banks with min interest rates by loan type."""
     db = request.app.state.db
 
+    loan_filter = ""
+    params: list = []
+    if loan_type and loan_type.upper() != "ALL":
+        loan_filter = "AND lp.loan_type = $1"
+        params.append(loan_type.upper())
+
     rows = await db.pool.fetch(
-        """
+        f"""
         SELECT b.id AS bank_id, b.bank_code, b.bank_name, b.website_status,
                lp.loan_type, MIN(lp.min_interest_rate) AS min_rate,
                ROUND(AVG(lp.completeness_score)::numeric, 4) AS completeness_score,
                ROUND(AVG(lp.data_confidence)::numeric, 4) AS data_confidence
         FROM banks b
         LEFT JOIN loan_programs lp ON lp.bank_id = b.id AND lp.is_latest = true
+            {loan_filter}
         GROUP BY b.id, b.bank_code, b.bank_name, b.website_status, lp.loan_type
         ORDER BY b.bank_code
-        """
+        """,
+        *params,
     )
 
     banks: dict[str, dict] = {}

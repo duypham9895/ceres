@@ -215,6 +215,31 @@ export default function Overview() {
       />
 
       <div className="p-5 space-y-5">
+        {/* Action Buttons */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-lg font-bold text-text-heading">Overview</h1>
+          <div className="flex gap-2">
+            <button
+              onClick={() => apiPost('/api/crawl/daily').then(() => toast.success('Crawl All Banks triggered')).catch(() => toast.error('Failed to trigger crawl'))}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-error/10 text-error border border-error/20 hover:bg-error/20"
+            >
+              Crawl All Banks
+            </button>
+            <button
+              onClick={() => apiPost('/api/crawl/scout').then(() => toast.success('Scout triggered')).catch(() => toast.error('Failed to trigger scout'))}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-bg-card text-text-dim border border-border-light hover:bg-bg-hover"
+            >
+              Scout
+            </button>
+            <button
+              onClick={() => apiPost('/api/crawl/learning').then(() => toast.success('Learning triggered')).catch(() => toast.error('Failed to trigger learning'))}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-bg-card text-text-dim border border-border-light hover:bg-bg-hover"
+            >
+              Learning
+            </button>
+          </div>
+        </div>
+
         {/* Zone 2: KPI Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {dashLoading ? (
