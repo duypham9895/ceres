@@ -271,6 +271,21 @@ class Database:
             strategy_id,
         )
 
+    async def update_crawl_log_programs(
+        self, *, crawl_log_id: str, programs_found: int
+    ) -> None:
+        """Update only the programs_found count on a crawl log.
+
+        Intentionally separate from update_crawl_log() to avoid overwriting
+        crawler-owned fields (status, pages_crawled, duration_ms, etc.).
+        The parser owns programs_found; the crawler owns everything else.
+        """
+        await self.pool.execute(
+            "UPDATE crawl_logs SET programs_found = $2 WHERE id = $1::uuid",
+            crawl_log_id,
+            programs_found,
+        )
+
     # ------------------------------------------------------------------
     # Crawl Raw Data
     # ------------------------------------------------------------------
@@ -283,12 +298,16 @@ class Database:
         page_url: str,
         raw_html: str,
     ) -> dict[str, Any]:
-        """Store raw HTML from a crawled page."""
+        """Store raw HTML from a crawled page.
+
+        Returns metadata only (not the raw_html blob) to avoid keeping
+        multi-MB strings in Python memory after insertion.
+        """
         return await self.pool.fetchrow(
             """
             INSERT INTO crawl_raw_data (crawl_log_id, bank_id, page_url, raw_html)
             VALUES ($1::uuid, $2::uuid, $3, $4)
-            RETURNING *
+            RETURNING id, crawl_log_id, bank_id, page_url, parsed, created_at
             """,
             crawl_log_id,
             bank_id,
@@ -299,10 +318,19 @@ class Database:
     async def fetch_unparsed_html(
         self, *, bank_id: Optional[str] = None, bank_code: Optional[str] = None
     ) -> list[dict[str, Any]]:
-        """Fetch unparsed HTML rows joined with bank info and strategy selectors."""
+        """Fetch unparsed row metadata (WITHOUT raw_html) for parsing.
+
+        Returns rows with id, bank_id, bank_code, bank_name, page_url,
+        crawl_log_id, selectors. Use fetch_raw_html_by_id() to load the
+        actual HTML one row at a time during processing.
+        """
         base_query = """
             SELECT
-                crd.*,
+                crd.id,
+                crd.crawl_log_id,
+                crd.bank_id,
+                crd.page_url,
+                crd.created_at,
                 b.bank_code,
                 b.bank_name,
                 bs.selectors
@@ -326,12 +354,40 @@ class Database:
             )
         return await self.pool.fetch(base_query + " ORDER BY crd.created_at")
 
-    async def mark_parsed(self, *, raw_data_id: str) -> None:
-        """Mark a raw data row as parsed."""
-        await self.pool.execute(
-            "UPDATE crawl_raw_data SET parsed = true WHERE id = $1::uuid",
+    async def fetch_raw_html_by_id(self, *, raw_data_id: str) -> Optional[str]:
+        """Fetch only the raw_html for a single crawl_raw_data row.
+
+        Returns None if the row doesn't exist. Loads one HTML blob at a
+        time to avoid holding hundreds of MB in memory simultaneously.
+        """
+        return await self.pool.fetchval(
+            "SELECT raw_html FROM crawl_raw_data WHERE id = $1::uuid",
             raw_data_id,
         )
+
+    async def mark_parsed(
+        self, *, raw_data_id: str, programs_produced: int = 0
+    ) -> None:
+        """Mark a raw data row as parsed with the count of programs extracted."""
+        try:
+            await self.pool.execute(
+                """
+                UPDATE crawl_raw_data
+                SET parsed = true, programs_produced = $2
+                WHERE id = $1::uuid
+                """,
+                raw_data_id,
+                programs_produced,
+            )
+        except asyncpg.UndefinedColumnError:
+            await self.pool.execute(
+                """
+                UPDATE crawl_raw_data
+                SET parsed = true
+                WHERE id = $1::uuid
+                """,
+                raw_data_id,
+            )
 
     # ------------------------------------------------------------------
     # Loan Programs
@@ -553,6 +609,7 @@ class Database:
             """
             SELECT
                 COUNT(*) AS total_crawls,
+                COUNT(DISTINCT bank_id) AS banks_crawled,
                 COUNT(*) FILTER (WHERE status = 'success') AS successful,
                 COUNT(*) FILTER (WHERE status = 'failed') AS failed,
                 COUNT(*) FILTER (WHERE status = 'blocked') AS blocked,
@@ -566,6 +623,76 @@ class Database:
             days,
         )
         return dict(row) if row else {}
+
+    async def get_parse_stats(self, *, days: int = 7) -> list[dict[str, Any]]:
+        """Get per-bank parse success metrics for the last N days.
+
+        Returns rows with: bank_code, total_raw_rows, parsed_rows,
+        rows_with_programs, total_programs_produced.
+        """
+        try:
+            rows = await self.pool.fetch(
+                """
+                SELECT
+                    b.bank_code,
+                    COUNT(*) AS total_raw_rows,
+                    COUNT(*) FILTER (WHERE crd.parsed = true) AS parsed_rows,
+                    COUNT(*) FILTER (WHERE crd.programs_produced > 0)
+                        AS rows_with_programs,
+                    COALESCE(SUM(crd.programs_produced), 0)
+                        AS total_programs_produced
+                FROM crawl_raw_data crd
+                JOIN banks b ON b.id = crd.bank_id
+                WHERE crd.created_at >= NOW() - make_interval(days => $1)
+                GROUP BY b.bank_code
+                ORDER BY b.bank_code
+                """,
+                days,
+            )
+        except asyncpg.UndefinedColumnError:
+            rows = await self.pool.fetch(
+                """
+                SELECT
+                    b.bank_code,
+                    COUNT(*) AS total_raw_rows,
+                    COUNT(*) FILTER (WHERE crd.parsed = true) AS parsed_rows,
+                    0 AS rows_with_programs,
+                    0 AS total_programs_produced
+                FROM crawl_raw_data crd
+                JOIN banks b ON b.id = crd.bank_id
+                WHERE crd.created_at >= NOW() - make_interval(days => $1)
+                GROUP BY b.bank_code
+                ORDER BY b.bank_code
+                """,
+                days,
+            )
+        return [dict(r) for r in rows]
+
+    async def get_bank_crawl_stats(
+        self, *, days: int = 30
+    ) -> list[dict[str, Any]]:
+        """Get per-bank crawl success metrics for the last N days.
+
+        Returns rows with: bank_code, total_crawls, successful,
+        failed, blocked.
+        """
+        rows = await self.pool.fetch(
+            """
+            SELECT
+                b.bank_code,
+                COUNT(*) AS total_crawls,
+                COUNT(*) FILTER (WHERE cl.status = 'success') AS successful,
+                COUNT(*) FILTER (WHERE cl.status = 'failed') AS failed,
+                COUNT(*) FILTER (WHERE cl.status = 'blocked') AS blocked
+            FROM crawl_logs cl
+            JOIN banks b ON b.id = cl.bank_id
+            WHERE cl.created_at >= NOW() - make_interval(days => $1)
+            GROUP BY b.bank_code
+            ORDER BY b.bank_code
+            """,
+            days,
+        )
+        return [dict(r) for r in rows]
 
     # ------------------------------------------------------------------
     # Agent Run Tracking
@@ -634,3 +761,505 @@ class Database:
             """
         )
         return [dict(r) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Dashboard Queries
+    # ------------------------------------------------------------------
+
+    async def get_dashboard_alerts(self) -> list[dict[str, Any]]:
+        """Return aggregated alerts across 5 categories for the dashboard.
+
+        Categories: crawl_failures, rate_anomalies, data_quality,
+        stale_data, strategy_health.
+        """
+        alerts: list[dict[str, Any]] = []
+
+        # 1a. Crawl failures — unreachable banks
+        rows = await self.pool.fetch(
+            """
+            SELECT bank_code
+            FROM banks
+            WHERE website_status = 'unreachable'
+              AND (last_crawled_at IS NULL
+                   OR last_crawled_at < NOW() - INTERVAL '24 hours')
+            ORDER BY bank_code
+            """
+        )
+        if rows:
+            codes = [r["bank_code"] for r in rows]
+            alerts.append({
+                "category": "crawl_failures",
+                "type": "unreachable",
+                "message": f"{len(codes)} bank(s) unreachable for 24+ hours",
+                "count": len(codes),
+                "bank_codes": codes,
+                "cta": {"label": "Re-crawl", "agent": "crawler"},
+            })
+
+        # 1b. Crawl failures — anti-bot blocks in last 24h
+        rows = await self.pool.fetch(
+            """
+            SELECT DISTINCT b.bank_code
+            FROM crawl_logs cl
+            JOIN banks b ON b.id = cl.bank_id
+            WHERE cl.status = 'blocked'
+              AND cl.created_at >= NOW() - INTERVAL '24 hours'
+            ORDER BY b.bank_code
+            """
+        )
+        if rows:
+            codes = [r["bank_code"] for r in rows]
+            alerts.append({
+                "category": "crawl_failures",
+                "type": "anti_bot",
+                "message": f"{len(codes)} bank(s) blocked by anti-bot in last 24h",
+                "count": len(codes),
+                "bank_codes": codes,
+                "cta": {"label": "Review strategy", "agent": "strategist"},
+            })
+
+        # 2. Rate anomalies — current vs previous version delta > 0.5
+        rows = await self.pool.fetch(
+            """
+            SELECT DISTINCT b.bank_code
+            FROM loan_programs curr
+            JOIN loan_programs prev
+              ON prev.bank_id = curr.bank_id
+             AND prev.loan_type = curr.loan_type
+             AND prev.program_name = curr.program_name
+             AND prev.is_latest = false
+            JOIN banks b ON b.id = curr.bank_id
+            WHERE curr.is_latest = true
+              AND curr.min_interest_rate IS NOT NULL
+              AND prev.min_interest_rate IS NOT NULL
+              AND ABS(curr.min_interest_rate - prev.min_interest_rate) > 0.5
+            ORDER BY b.bank_code
+            """
+        )
+        if rows:
+            codes = [r["bank_code"] for r in rows]
+            alerts.append({
+                "category": "rate_anomalies",
+                "type": "large_rate_change",
+                "message": f"{len(codes)} bank(s) with interest rate change > 0.5%",
+                "count": len(codes),
+                "bank_codes": codes,
+                "cta": {"label": "Review rates", "agent": "parser"},
+            })
+
+        # 3. Data quality — avg completeness_score < 0.5
+        rows = await self.pool.fetch(
+            """
+            SELECT b.bank_code
+            FROM loan_programs lp
+            JOIN banks b ON b.id = lp.bank_id
+            WHERE lp.is_latest = true
+            GROUP BY b.bank_code
+            HAVING AVG(lp.completeness_score) < 0.5
+            ORDER BY b.bank_code
+            """
+        )
+        if rows:
+            codes = [r["bank_code"] for r in rows]
+            alerts.append({
+                "category": "data_quality",
+                "type": "low_completeness",
+                "message": f"{len(codes)} bank(s) with avg completeness below 50%",
+                "count": len(codes),
+                "bank_codes": codes,
+                "cta": {"label": "Re-parse", "agent": "parser"},
+            })
+
+        # 4. Stale data — active banks not crawled in 3+ days
+        rows = await self.pool.fetch(
+            """
+            SELECT bank_code
+            FROM banks
+            WHERE website_status != 'unreachable'
+              AND (last_crawled_at IS NULL
+                   OR last_crawled_at < NOW() - INTERVAL '3 days')
+            ORDER BY bank_code
+            """
+        )
+        if rows:
+            codes = [r["bank_code"] for r in rows]
+            alerts.append({
+                "category": "stale_data",
+                "type": "not_crawled_3d",
+                "message": f"{len(codes)} active bank(s) not crawled in 3+ days",
+                "count": len(codes),
+                "bank_codes": codes,
+                "cta": {"label": "Schedule crawl", "agent": "crawler"},
+            })
+
+        # 5. Strategy health — active strategies with success_rate < 0.3
+        rows = await self.pool.fetch(
+            """
+            SELECT b.bank_code
+            FROM bank_strategies bs
+            JOIN banks b ON b.id = bs.bank_id
+            WHERE bs.is_active = true
+              AND bs.is_primary = true
+              AND COALESCE(bs.success_rate, 0) < 0.3
+            ORDER BY b.bank_code
+            """
+        )
+        if rows:
+            codes = [r["bank_code"] for r in rows]
+            alerts.append({
+                "category": "strategy_health",
+                "type": "low_success_rate",
+                "message": f"{len(codes)} bank(s) with strategy success rate below 30%",
+                "count": len(codes),
+                "bank_codes": codes,
+                "cta": {"label": "Rebuild strategy", "agent": "strategist"},
+            })
+
+        return alerts
+
+    async def get_dashboard_changes(self, date: str) -> list[dict[str, Any]]:
+        """Return meaningful changes for a given date (YYYY-MM-DD).
+
+        Covers: new programs, rate decreases, rate increases, bank status changes.
+        """
+        changes: list[dict[str, Any]] = []
+
+        # New programs added on that date
+        row = await self.pool.fetchrow(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM loan_programs
+            WHERE is_latest = true
+              AND DATE(created_at) = $1::date
+            """,
+            date,
+        )
+        new_count = row["cnt"] if row else 0
+        if new_count > 0:
+            changes.append({
+                "type": "new_programs",
+                "count": int(new_count),
+                "detail": f"{new_count} new loan program(s) added on {date}",
+            })
+
+        # Rate decreases — current min_interest_rate < previous version
+        row = await self.pool.fetchrow(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM loan_programs curr
+            JOIN loan_programs prev
+              ON prev.bank_id = curr.bank_id
+             AND prev.loan_type = curr.loan_type
+             AND prev.program_name = curr.program_name
+             AND prev.is_latest = false
+            WHERE curr.is_latest = true
+              AND DATE(curr.updated_at) = $1::date
+              AND curr.min_interest_rate IS NOT NULL
+              AND prev.min_interest_rate IS NOT NULL
+              AND curr.min_interest_rate < prev.min_interest_rate
+            """,
+            date,
+        )
+        decrease_count = row["cnt"] if row else 0
+        if decrease_count > 0:
+            changes.append({
+                "type": "rate_decrease",
+                "count": int(decrease_count),
+                "detail": f"{decrease_count} program(s) had rate decreases on {date}",
+            })
+
+        # Rate increases — current min_interest_rate > previous version
+        row = await self.pool.fetchrow(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM loan_programs curr
+            JOIN loan_programs prev
+              ON prev.bank_id = curr.bank_id
+             AND prev.loan_type = curr.loan_type
+             AND prev.program_name = curr.program_name
+             AND prev.is_latest = false
+            WHERE curr.is_latest = true
+              AND DATE(curr.updated_at) = $1::date
+              AND curr.min_interest_rate IS NOT NULL
+              AND prev.min_interest_rate IS NOT NULL
+              AND curr.min_interest_rate > prev.min_interest_rate
+            """,
+            date,
+        )
+        increase_count = row["cnt"] if row else 0
+        if increase_count > 0:
+            changes.append({
+                "type": "rate_increase",
+                "count": int(increase_count),
+                "detail": f"{increase_count} program(s) had rate increases on {date}",
+            })
+
+        # Bank status changes — banks with updated_at on that date
+        row = await self.pool.fetchrow(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM banks
+            WHERE DATE(updated_at) = $1::date
+            """,
+            date,
+        )
+        status_count = row["cnt"] if row else 0
+        if status_count > 0:
+            changes.append({
+                "type": "bank_status_change",
+                "count": int(status_count),
+                "detail": f"{status_count} bank(s) had status updates on {date}",
+            })
+
+        return changes
+
+    async def get_dashboard_quality(self) -> dict[str, Any]:
+        """Return data quality distribution across banks.
+
+        Buckets: high (>0.8), medium (0.5-0.8), low (<0.5).
+        """
+        row = await self.pool.fetchrow(
+            """
+            SELECT
+                COUNT(*) FILTER (WHERE avg_score > 0.8) AS high,
+                COUNT(*) FILTER (WHERE avg_score BETWEEN 0.5 AND 0.8) AS medium,
+                COUNT(*) FILTER (WHERE avg_score < 0.5) AS low,
+                COALESCE(AVG(avg_score), 0.0) AS avg_completeness
+            FROM (
+                SELECT bank_id, AVG(completeness_score) AS avg_score
+                FROM loan_programs
+                WHERE is_latest = true
+                GROUP BY bank_id
+            ) sub
+            """
+        )
+        if not row:
+            return {
+                "high": {"count": 0, "threshold": 0.8},
+                "medium": {"count": 0, "threshold": 0.5},
+                "low": {"count": 0, "threshold": 0.0},
+                "avg_completeness": 0.0,
+            }
+        return {
+            "high": {"count": int(row["high"]), "threshold": 0.8},
+            "medium": {"count": int(row["medium"]), "threshold": 0.5},
+            "low": {"count": int(row["low"]), "threshold": 0.0},
+            "avg_completeness": float(row["avg_completeness"]),
+        }
+
+    async def get_crawl_analytics(self, *, days: int = 7) -> dict[str, Any]:
+        """Return extended crawl analytics for the dashboard.
+
+        Includes: summary stats (with prev-week comparison), error breakdown,
+        and daily success rates over days*4 window for trend charts.
+        """
+        # Current window stats
+        stats_row = await self.pool.fetchrow(
+            """
+            SELECT
+                COUNT(*) AS total_crawls,
+                CASE WHEN COUNT(*) = 0 THEN 0.0
+                     ELSE ROUND(
+                         COUNT(*) FILTER (WHERE status = 'success')::numeric
+                         / COUNT(*)::numeric, 4
+                     )
+                END AS success_rate,
+                COALESCE(AVG(duration_ms), 0.0) AS avg_duration_ms,
+                COALESCE(SUM(programs_found), 0) AS programs_found,
+                COALESCE(SUM(programs_new), 0) AS programs_new
+            FROM crawl_logs
+            WHERE created_at >= NOW() - make_interval(days => $1)
+            """,
+            days,
+        )
+
+        # Previous window stats (for comparison)
+        prev_row = await self.pool.fetchrow(
+            """
+            SELECT
+                CASE WHEN COUNT(*) = 0 THEN 0.0
+                     ELSE ROUND(
+                         COUNT(*) FILTER (WHERE status = 'success')::numeric
+                         / COUNT(*)::numeric, 4
+                     )
+                END AS success_rate_prev_week
+            FROM crawl_logs
+            WHERE created_at >= NOW() - make_interval(days => $1 * 2)
+              AND created_at < NOW() - make_interval(days => $1)
+            """,
+            days,
+        )
+
+        # Error breakdown
+        breakdown_rows = await self.pool.fetch(
+            """
+            SELECT status, COUNT(*) AS cnt
+            FROM crawl_logs
+            WHERE created_at >= NOW() - make_interval(days => $1)
+            GROUP BY status
+            """,
+            days,
+        )
+        error_breakdown: dict[str, int] = {
+            "success": 0,
+            "failed": 0,
+            "blocked": 0,
+            "timeout": 0,
+        }
+        for r in breakdown_rows:
+            key = r["status"]
+            if key in error_breakdown:
+                error_breakdown[key] = int(r["cnt"])
+
+        # Daily success rate over expanded window
+        daily_rows = await self.pool.fetch(
+            """
+            SELECT
+                DATE(created_at) AS day,
+                CASE WHEN COUNT(*) = 0 THEN 0.0
+                     ELSE ROUND(
+                         COUNT(*) FILTER (WHERE status = 'success')::numeric
+                         / COUNT(*)::numeric, 4
+                     )
+                END AS rate
+            FROM crawl_logs
+            WHERE created_at >= NOW() - make_interval(days => $1 * 4)
+            GROUP BY DATE(created_at)
+            ORDER BY day ASC
+            """,
+            days,
+        )
+        daily_success_rate = [
+            {"date": str(r["day"]), "rate": float(r["rate"])}
+            for r in daily_rows
+        ]
+
+        return {
+            "stats": {
+                "total_crawls_7d": int(stats_row["total_crawls"]) if stats_row else 0,
+                "success_rate": float(stats_row["success_rate"]) if stats_row else 0.0,
+                "success_rate_prev_week": float(prev_row["success_rate_prev_week"]) if prev_row else 0.0,
+                "avg_duration_ms": float(stats_row["avg_duration_ms"]) if stats_row else 0.0,
+                "programs_found": int(stats_row["programs_found"]) if stats_row else 0,
+                "programs_new": int(stats_row["programs_new"]) if stats_row else 0,
+            },
+            "error_breakdown": error_breakdown,
+            "daily_success_rate": daily_success_rate,
+        }
+
+    async def get_loan_compare(self, loan_type: str) -> list[dict[str, Any]]:
+        """Return latest loan programs for a given loan_type, ordered by min rate.
+
+        Intended for side-by-side comparison across banks.
+        """
+        rows = await self.pool.fetch(
+            """
+            SELECT
+                b.bank_code,
+                b.bank_name,
+                lp.min_interest_rate,
+                lp.max_interest_rate,
+                lp.rate_fixed,
+                lp.rate_floating,
+                lp.rate_promo,
+                lp.rate_promo_duration_months,
+                lp.completeness_score
+            FROM loan_programs lp
+            JOIN banks b ON lp.bank_id = b.id
+            WHERE lp.is_latest = true
+              AND lp.loan_type = $1
+            ORDER BY lp.min_interest_rate ASC NULLS LAST
+            """,
+            loan_type,
+        )
+        return [dict(r) for r in rows]
+
+    async def get_dashboard_sparklines(self, *, days: int = 7) -> dict[str, Any]:
+        """Return 7-day sparkline data for KPI cards.
+
+        Returns daily series for: bank count, program count,
+        avg KPR rate, and avg completeness.
+        """
+        # Generate the date series to ensure no gaps
+        date_series_sql = (
+            "SELECT generate_series("
+            "    (NOW() - make_interval(days => $1 - 1))::date,"
+            "    NOW()::date,"
+            "    '1 day'::interval"
+            ")::date AS day"
+        )
+
+        # Cumulative bank count per day
+        bank_rows = await self.pool.fetch(
+            f"""
+            WITH days AS ({date_series_sql})
+            SELECT
+                d.day,
+                COUNT(b.id) AS cnt
+            FROM days d
+            LEFT JOIN banks b ON b.created_at::date <= d.day
+            GROUP BY d.day
+            ORDER BY d.day ASC
+            """,
+            days,
+        )
+
+        # Latest program count per day (programs created up to each day)
+        program_rows = await self.pool.fetch(
+            f"""
+            WITH days AS ({date_series_sql})
+            SELECT
+                d.day,
+                COUNT(lp.id) AS cnt
+            FROM days d
+            LEFT JOIN loan_programs lp
+                ON lp.is_latest = true
+               AND lp.created_at::date <= d.day
+            GROUP BY d.day
+            ORDER BY d.day ASC
+            """,
+            days,
+        )
+
+        # Avg KPR rate per day
+        kpr_rows = await self.pool.fetch(
+            f"""
+            WITH days AS ({date_series_sql})
+            SELECT
+                d.day,
+                COALESCE(AVG(lp.min_interest_rate), 0.0) AS avg_rate
+            FROM days d
+            LEFT JOIN loan_programs lp
+                ON lp.is_latest = true
+               AND lp.loan_type = 'KPR'
+               AND lp.min_interest_rate IS NOT NULL
+               AND lp.created_at::date <= d.day
+            GROUP BY d.day
+            ORDER BY d.day ASC
+            """,
+            days,
+        )
+
+        # Avg completeness per day
+        quality_rows = await self.pool.fetch(
+            f"""
+            WITH days AS ({date_series_sql})
+            SELECT
+                d.day,
+                COALESCE(AVG(lp.completeness_score), 0.0) AS avg_quality
+            FROM days d
+            LEFT JOIN loan_programs lp
+                ON lp.is_latest = true
+               AND lp.created_at::date <= d.day
+            GROUP BY d.day
+            ORDER BY d.day ASC
+            """,
+            days,
+        )
+
+        return {
+            "banks": [int(r["cnt"]) for r in bank_rows],
+            "programs": [int(r["cnt"]) for r in program_rows],
+            "kpr_rate": [round(float(r["avg_rate"]), 2) for r in kpr_rows],
+            "quality": [round(float(r["avg_quality"]), 4) for r in quality_rows],
+        }
