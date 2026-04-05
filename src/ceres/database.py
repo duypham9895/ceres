@@ -35,7 +35,9 @@ class Database:
             self._dsn,
             min_size=self._min_size,
             max_size=self._max_size,
-            statement_cache_size=0,
+            # Use default statement cache (100) for prepared statement reuse;
+            # cache_size=0 was previously set to work around pgbouncer but
+            # we connect directly to Postgres so caching improves performance.
         )
 
     async def disconnect(self) -> None:

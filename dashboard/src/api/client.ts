@@ -1,9 +1,29 @@
 export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+const AUTH_TOKEN = import.meta.env.VITE_AUTH_TOKEN || '';
+
+function buildHeaders(extra?: HeadersInit): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (AUTH_TOKEN) {
+    headers['Authorization'] = `Bearer ${AUTH_TOKEN}`;
+  }
+  if (extra) {
+    const entries = extra instanceof Headers
+      ? Array.from(extra.entries())
+      : Array.isArray(extra)
+        ? extra
+        : Object.entries(extra);
+    for (const [k, v] of entries) {
+      headers[k] = v;
+    }
+  }
+  return headers;
+}
+
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const resp = await fetch(`${API_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     ...options,
+    headers: buildHeaders(options?.headers),
   });
   if (!resp.ok) {
     const error = await resp.json().catch(() => ({ error: resp.statusText }));

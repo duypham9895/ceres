@@ -122,7 +122,9 @@ class CrawlTaskRunner:
             bank_code=bank_code,
             force=force,
         )
-        return CrawlJob(job_id=job_id, agent=agent, status=CrawlJobStatus.QUEUED)
+        job = CrawlJob(job_id=job_id, agent=agent, status=CrawlJobStatus.QUEUED)
+        self._current_job = job
+        return job
 
     async def enqueue_batch(
         self,
@@ -132,17 +134,23 @@ class CrawlTaskRunner:
     ) -> list[Optional[CrawlJob]]:
         """Enqueue jobs for multiple banks concurrently."""
         if self._arq_pool is not None:
-            results = await asyncio.gather(
-                *(
-                    self._enqueue_job(agent, bank_code=code, force=force)
-                    for code in bank_codes
-                ),
-                return_exceptions=True,
-            )
-            return [
-                r if not isinstance(r, BaseException) else None
-                for r in results
+            coros = [
+                self._enqueue_job(agent, bank_code=code, force=force)
+                for code in bank_codes
             ]
+            results = await asyncio.gather(*coros, return_exceptions=True)
+            jobs: list[Optional[CrawlJob]] = []
+            for bank_code_item, result in zip(bank_codes, results):
+                if isinstance(result, BaseException):
+                    logger.warning(
+                        "Failed to enqueue job for %s: %s",
+                        bank_code_item,
+                        result,
+                    )
+                    jobs.append(None)
+                else:
+                    jobs.append(result)
+            return jobs
 
         # In-process fallback: run single agent for all banks at once
         if not bank_codes:

@@ -45,6 +45,7 @@ export function useWebSocket() {
   const [eventBuffer, setEventBuffer] = useState<CrawlEvent[]>(loadEventBuffer);
   const [isConnected, setIsConnected] = useState(false);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCount = useRef(0);
 
   const connect = useCallback(() => {
     const ws = new WebSocket(`${WS_URL}/ws/crawl-status`);
@@ -52,6 +53,7 @@ export function useWebSocket() {
 
     ws.onopen = () => {
       setIsConnected(true);
+      retryCount.current = 0;
       ws.send(JSON.stringify({ subscribe: 'all' }));
     };
 
@@ -76,7 +78,9 @@ export function useWebSocket() {
 
     ws.onclose = () => {
       setIsConnected(false);
-      reconnectTimer.current = setTimeout(connect, 3000);
+      const delay = Math.min(1000 * Math.pow(2, retryCount.current), 30000);
+      retryCount.current += 1;
+      reconnectTimer.current = setTimeout(connect, delay);
     };
   }, [queryClient]);
 

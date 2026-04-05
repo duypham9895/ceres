@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from ceres.api.websocket import ConnectionManager
+
+AUTH_TOKEN = os.environ.get("CERES_AUTH_TOKEN", "")
 
 # Cloudflare kills idle WebSockets after 100s. Ping every 30s to stay alive.
 WS_PING_INTERVAL_S = 30
@@ -67,6 +71,19 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    @app.middleware("http")
+    async def check_auth(request: Request, call_next):
+        if AUTH_TOKEN and request.url.path.startswith("/api"):
+            # Skip auth for health/status and WebSocket endpoints
+            skip_paths = ("/api/status", "/api/health", "/ws/crawl-status")
+            if request.url.path not in skip_paths:
+                token = request.headers.get("Authorization", "").replace("Bearer ", "")
+                if token != AUTH_TOKEN:
+                    return JSONResponse(
+                        status_code=401, content={"error": "Unauthorized"}
+                    )
+        return await call_next(request)
+
     from ceres.api.routes import router
 
     app.include_router(router, prefix="/api")

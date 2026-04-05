@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 from ceres.agents.base import BaseAgent
 from ceres.browser.manager import BrowserType
+from ceres.browser.proxy import create_proxy_provider, NoOpProxyProvider
 from ceres.browser.stealth import detect_anti_bot
 from ceres.database import Database
 
@@ -124,9 +125,16 @@ class LabAgent(BaseAgent):
         """
         tests_run = 0
 
+        proxy_provider = create_proxy_provider(db=self.db)
+
         for approach in TEST_APPROACHES:
             if approach.get("requires_proxy"):
-                continue
+                if isinstance(proxy_provider, NoOpProxyProvider):
+                    self.logger.info(
+                        "Skipping proxy approach %s — no proxy configured",
+                        approach["name"],
+                    )
+                    continue
 
             result = await self._test_approach(strategy, approach)
             tests_run += 1

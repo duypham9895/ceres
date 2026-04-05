@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Building2, Coins, ScrollText, Zap, Lightbulb } from 'lucide-react';
+import { LayoutDashboard, Building2, Coins, ScrollText, Zap, Lightbulb, ListTodo } from 'lucide-react';
 import { useCrawlStatus } from '../context/CrawlStatusContext';
 import CrawlPipelineMonitor from './CrawlPipelineMonitor';
 import CrawlToast from './CrawlToast';
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { path: '/banks', label: 'Banks', Icon: Building2 },
   { path: '/programs', label: 'Loan Programs', Icon: Coins },
   { path: '/logs', label: 'Crawl Logs', Icon: ScrollText },
+  { path: '/jobs', label: 'Jobs', Icon: ListTodo },
   { path: '/strategies', label: 'Strategies', Icon: Zap },
   { path: '/recommendations', label: 'Recommendations', Icon: Lightbulb },
 ];

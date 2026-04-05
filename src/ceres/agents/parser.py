@@ -418,18 +418,3 @@ def _auto_create_llm_extractor() -> LLMExtractor | None:
     return None
 
 
-def _run_sync(coro):
-    """Await a coroutine from synchronous context using the running loop.
-
-    This is used because _parse_page is synchronous but may need to call
-    the async LLM extractor.
-    """
-    import asyncio
-
-    loop = asyncio.get_event_loop()
-    if loop.is_running():
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            return pool.submit(asyncio.run, coro).result()
-    return loop.run_until_complete(coro)

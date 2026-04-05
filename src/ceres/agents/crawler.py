@@ -10,6 +10,7 @@ from ceres.agents.base import BaseAgent
 from ceres.browser.manager import BrowserManager, BrowserType
 from ceres.browser.stealth import detect_anti_bot
 from ceres.database import Database
+from ceres.utils.captcha import CaptchaSolver, create_captcha_solver
 from ceres.utils.rate_limiter import RateLimiter
 
 DEFAULT_MAX_RETRIES = 3
@@ -40,6 +41,7 @@ class CrawlerAgent(BaseAgent):
         )
         self._browser_manager = browser_manager
         self._owns_browser = False
+        self._captcha_solver: CaptchaSolver = create_captcha_solver()
 
     async def run(self, **kwargs) -> dict:
         """Crawl active bank strategies.
@@ -131,13 +133,43 @@ class CrawlerAgent(BaseAgent):
 
                     bot_result = detect_anti_bot(html)
                     if bot_result.detected:
-                        anti_bot_detected = True
-                        self.logger.warning(
-                            f"Anti-bot BLOCKED {url}: {bot_result.anti_bot_type} — skipping storage"
-                        )
-                        bank_stats["failures"] += 1
-                        last_error = f"{url}: blocked by {bot_result.anti_bot_type}"
-                        continue
+                        # Attempt captcha solving if a solver is configured
+                        solved = False
+                        if bot_result.anti_bot_type and "captcha" in bot_result.anti_bot_type.lower():
+                            self.logger.info(
+                                "Captcha detected on %s, attempting solve", url,
+                            )
+                            token = await self._captcha_solver.solve(
+                                challenge_type="recaptcha_v2",
+                                page_url=url,
+                                sitekey=bot_result.details or "",
+                            )
+                            if token:
+                                self.logger.info("Captcha solved for %s, re-fetching", url)
+                                try:
+                                    html = await self._fetch_with_retry(
+                                        url=url,
+                                        strategy=strategy,
+                                        bank_code=bank_code,
+                                        rate_limiter=rate_limiter,
+                                    )
+                                    recheck = detect_anti_bot(html)
+                                    if not recheck.detected:
+                                        solved = True
+                                except Exception as captcha_exc:
+                                    self.logger.warning(
+                                        "Re-fetch after captcha solve failed for %s: %s",
+                                        url, captcha_exc,
+                                    )
+
+                        if not solved:
+                            anti_bot_detected = True
+                            self.logger.warning(
+                                f"Anti-bot BLOCKED {url}: {bot_result.anti_bot_type} — skipping storage"
+                            )
+                            bank_stats["failures"] += 1
+                            last_error = f"{url}: blocked by {bot_result.anti_bot_type}"
+                            continue
 
                     await self.db.store_raw_html(
                         crawl_log_id=crawl_log_id,

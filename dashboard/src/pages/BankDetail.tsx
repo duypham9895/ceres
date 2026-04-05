@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -168,8 +169,11 @@ function derivePipelineSteps(ps: PipelineStatus): {
   };
 }
 
+const LOGS_PER_PAGE = 10;
+
 export default function BankDetail() {
   const { id } = useParams<{ id: string }>();
+  const [logPage, setLogPage] = useState(1);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['bank', id],
@@ -182,6 +186,9 @@ export default function BankDetail() {
   if (!data) return null;
 
   const { bank, strategy, programs, crawl_logs, pipeline_status } = data;
+
+  const visibleLogs = crawl_logs.slice(0, logPage * LOGS_PER_PAGE);
+  const hasMoreLogs = crawl_logs.length > logPage * LOGS_PER_PAGE;
 
   const pipelineSteps = pipeline_status ? derivePipelineSteps(pipeline_status) : null;
 
@@ -406,7 +413,7 @@ export default function BankDetail() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {crawl_logs.map((log) => (
+              {visibleLogs.map((log) => (
                 <tr key={log.id} className="hover:bg-bg-hover">
                   <td className="px-4 py-3 text-sm font-[var(--font-mono)] text-text-secondary">{log.pages_crawled ?? '-'}</td>
                   <td className="px-4 py-3 text-sm"><StatusBadge status={log.status} /></td>
@@ -432,6 +439,16 @@ export default function BankDetail() {
               ))}
             </tbody>
           </table>
+        )}
+        {hasMoreLogs && (
+          <div className="px-6 py-3 border-t border-border text-center">
+            <button
+              onClick={() => setLogPage((prev) => prev + 1)}
+              className="text-sm text-accent hover:text-accent/80 font-medium"
+            >
+              Show more ({crawl_logs.length - visibleLogs.length} remaining)
+            </button>
+          </div>
         )}
       </div>
     </div>

@@ -11,6 +11,7 @@ import LoanPrograms from './pages/LoanPrograms';
 import CrawlLogs from './pages/CrawlLogs';
 import Strategies from './pages/Strategies';
 import Recommendations from './pages/Recommendations';
+import Jobs from './pages/Jobs';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } });
 
@@ -38,6 +39,16 @@ class ErrorBoundary extends React.Component<
   }
 }
 
+function NotFound() {
+  return (
+    <div style={{ padding: '4rem', textAlign: 'center' }}>
+      <h1 style={{ fontSize: '3rem', marginBottom: '1rem' }}>404</h1>
+      <p style={{ color: '#888', marginBottom: '2rem' }}>Page not found</p>
+      <a href="/" style={{ color: '#3b82f6' }}>← Back to Overview</a>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -53,6 +64,8 @@ export default function App() {
                 <Route path="/logs" element={<CrawlLogs />} />
                 <Route path="/strategies" element={<Strategies />} />
                 <Route path="/recommendations" element={<Recommendations />} />
+                <Route path="/jobs" element={<Jobs />} />
+                <Route path="*" element={<NotFound />} />
               </Routes>
             </Layout>
             <Toaster position="top-right" richColors />
