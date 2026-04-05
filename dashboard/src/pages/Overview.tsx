@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { apiFetch, apiPost } from '../api/client';
 import type { ExtendedDashboard, AlertsResponse, ChangesResponse, QualityResponse, HeatmapBank } from '../types/dashboard';
@@ -73,9 +74,10 @@ function StatusDot({ status }: { readonly status: string }) {
 
 interface RateTableProps {
   readonly banks: readonly HeatmapBank[];
+  readonly onBankClick: (bankId: string) => void;
 }
 
-function RateTable({ banks }: RateTableProps) {
+function RateTable({ banks, onBankClick }: RateTableProps) {
   if (banks.length === 0) {
     return (
       <div className="flex items-center justify-center py-10 text-text-muted text-sm">
@@ -102,11 +104,15 @@ function RateTable({ banks }: RateTableProps) {
             const minRate = getMinRate(bank.rates);
             const maxRate = getMaxRate(bank.rates);
             return (
-              <tr key={bank.bank_code} className="border-b border-border-light/50 hover:bg-bg-hover/30">
+              <tr
+                key={bank.bank_code}
+                onClick={() => onBankClick(bank.bank_id)}
+                className="border-b border-border-light/50 hover:bg-bg-hover/30 cursor-pointer"
+              >
                 <td className="py-2 px-3">
                   <div className="flex items-center gap-2">
                     <StatusDot status={bank.website_status} />
-                    <span className="font-medium text-text-heading truncate max-w-[120px]" title={bank.bank_name}>
+                    <span className="font-medium text-accent hover:underline truncate max-w-[120px]" title={bank.bank_name}>
                       {bank.bank_name}
                     </span>
                   </div>
@@ -143,9 +149,11 @@ function RateTable({ banks }: RateTableProps) {
 
 export default function Overview() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { currentStep, steps, isRunning } = useCrawlStatus();
 
   const [activeTab, setActiveTab] = useState<LoanTab>('KPR');
+  const [loadingAlertIdx, setLoadingAlertIdx] = useState<number | null>(null);
 
   // Zone 2 data
   const { data: dashboard, isLoading: dashLoading } = useQuery({
@@ -181,18 +189,24 @@ export default function Overview() {
     staleTime: 30_000,
   });
 
-  // Alert action mutation
-  const triggerAction = useMutation({
-    mutationFn: (params: { agent: string; bankCodes: string[] }) =>
-      Promise.all(params.bankCodes.map((code) => apiPost(`/api/crawl/${params.agent}?bank=${code}`))),
-    onSuccess: () => {
-      toast.success('Action triggered');
-      void queryClient.invalidateQueries({ queryKey: ['dashboard-alerts'] });
+  // Alert action handler with per-alert loading state
+  const triggerAlertAction = useCallback(
+    (idx: number, agent: string, bankCodes: readonly string[]) => {
+      setLoadingAlertIdx(idx);
+      Promise.all(bankCodes.map((code) => apiPost(`/api/crawl/${agent}?bank=${code}`)))
+        .then(() => {
+          toast.success(`Re-crawl triggered for ${bankCodes.join(', ')}`);
+          void queryClient.invalidateQueries({ queryKey: ['dashboard-alerts'] });
+        })
+        .catch(() => {
+          toast.error('Failed to trigger action');
+        })
+        .finally(() => {
+          setLoadingAlertIdx(null);
+        });
     },
-    onError: () => {
-      toast.error('Failed to trigger action');
-    },
-  });
+    [queryClient],
+  );
 
   // Pipeline progress string
   const runningStep = steps.find((s) => s.status === 'running');
@@ -252,38 +266,46 @@ export default function Overview() {
             </>
           ) : (
             <>
-              <KpiCard
-                title="Banks Monitored"
-                value={dashboard?.total_banks ?? 0}
-                delta={`+${dashboard?.deltas.banks_week ?? 0} this week`}
-                deltaDirection="up"
-                sparkline={dashboard?.sparklines.banks as number[]}
-                sparklineColor="#4ade80"
-              />
-              <KpiCard
-                title="Loan Programs"
-                value={dashboard?.total_programs ?? 0}
-                delta={`+${dashboard?.deltas.programs_new ?? 0} new`}
-                deltaDirection="up"
-                sparkline={dashboard?.sparklines.programs as number[]}
-                sparklineColor="#60a5fa"
-              />
-              <KpiCard
-                title="Avg KPR Rate"
-                value={`${(dashboard?.sparklines.kpr_rate.at(-1) ?? 0).toFixed(1)}%`}
-                delta={`${(dashboard?.deltas.kpr_rate_change ?? 0) > 0 ? '↑' : '↓'} ${Math.abs(dashboard?.deltas.kpr_rate_change ?? 0).toFixed(1)}%`}
-                deltaDirection={(dashboard?.deltas.kpr_rate_change ?? 0) <= 0 ? 'up' : 'down'}
-                sparkline={dashboard?.sparklines.kpr_rate as number[]}
-                sparklineColor="#4ade80"
-              />
-              <KpiCard
-                title="Data Quality"
-                value={`${Math.round((dashboard?.quality_avg ?? 0) * 100)}%`}
-                delta="avg completeness"
-                deltaDirection="neutral"
-                sparkline={dashboard?.sparklines.quality as number[]}
-                sparklineColor="#60a5fa"
-              />
+              <div onClick={() => navigate('/banks')} className="cursor-pointer hover:ring-1 hover:ring-accent/30 rounded-xl transition-shadow">
+                <KpiCard
+                  title="Banks Monitored"
+                  value={dashboard?.total_banks ?? 0}
+                  delta={`+${dashboard?.deltas.banks_week ?? 0} this week`}
+                  deltaDirection="up"
+                  sparkline={dashboard?.sparklines.banks as number[]}
+                  sparklineColor="#4ade80"
+                />
+              </div>
+              <div onClick={() => navigate('/programs')} className="cursor-pointer hover:ring-1 hover:ring-accent/30 rounded-xl transition-shadow">
+                <KpiCard
+                  title="Loan Programs"
+                  value={dashboard?.total_programs ?? 0}
+                  delta={`+${dashboard?.deltas.programs_new ?? 0} new`}
+                  deltaDirection="up"
+                  sparkline={dashboard?.sparklines.programs as number[]}
+                  sparklineColor="#60a5fa"
+                />
+              </div>
+              <div onClick={() => navigate('/programs?loan_type=KPR')} className="cursor-pointer hover:ring-1 hover:ring-accent/30 rounded-xl transition-shadow">
+                <KpiCard
+                  title="Avg KPR Rate"
+                  value={`${(dashboard?.sparklines.kpr_rate.at(-1) ?? 0).toFixed(1)}%`}
+                  delta={`${(dashboard?.deltas.kpr_rate_change ?? 0) > 0 ? '↑' : '↓'} ${Math.abs(dashboard?.deltas.kpr_rate_change ?? 0).toFixed(1)}%`}
+                  deltaDirection={(dashboard?.deltas.kpr_rate_change ?? 0) <= 0 ? 'up' : 'down'}
+                  sparkline={dashboard?.sparklines.kpr_rate as number[]}
+                  sparklineColor="#4ade80"
+                />
+              </div>
+              <div onClick={() => navigate('/strategies')} className="cursor-pointer hover:ring-1 hover:ring-accent/30 rounded-xl transition-shadow">
+                <KpiCard
+                  title="Data Quality"
+                  value={`${Math.round((dashboard?.quality_avg ?? 0) * 100)}%`}
+                  delta="avg completeness"
+                  deltaDirection="neutral"
+                  sparkline={dashboard?.sparklines.quality as number[]}
+                  sparklineColor="#60a5fa"
+                />
+              </div>
             </>
           )}
         </div>
@@ -316,7 +338,7 @@ export default function Overview() {
                 <SkeletonTable rows={6} />
               </div>
             ) : (
-              <RateTable banks={heatmapData ?? []} />
+              <RateTable banks={heatmapData ?? []} onBankClick={(bankId) => navigate(`/banks/${bankId}`)} />
             )}
           </div>
 
@@ -339,13 +361,11 @@ export default function Overview() {
                       icon={getAlertIcon(alert.category, alert.type)}
                       message={alert.message}
                       category={alert.category}
+                      bankCodes={alert.bank_codes}
                       ctaLabel={alert.cta.label}
-                      loading={triggerAction.isPending}
+                      loading={loadingAlertIdx === idx}
                       onAction={() =>
-                        triggerAction.mutate({
-                          agent: alert.cta.agent,
-                          bankCodes: alert.bank_codes as string[],
-                        })
+                        triggerAlertAction(idx, alert.cta.agent, alert.bank_codes)
                       }
                     />
                   ))}
@@ -375,15 +395,26 @@ export default function Overview() {
                       text: 'text-text-dim',
                       label: 'INFO',
                     };
+                    const changePath =
+                      change.type === 'new_programs' ? '/programs'
+                      : change.type === 'rate_decrease' || change.type === 'rate_increase' ? '/programs?loan_type=KPR'
+                      : change.type === 'status_change' ? '/banks'
+                      : null;
                     return (
-                      <div key={idx} className="flex items-center gap-3 px-4 py-2.5">
+                      <div
+                        key={idx}
+                        onClick={() => changePath && navigate(changePath)}
+                        className={`flex items-center gap-3 px-4 py-2.5 ${changePath ? 'cursor-pointer hover:bg-bg-hover/50' : ''}`}
+                      >
                         <span
                           className={`flex-shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded ${badge.bg} ${badge.text}`}
                         >
                           {badge.label}
                         </span>
                         <div className="flex-1 min-w-0">
-                          <p className="text-[11px] text-text-dim truncate">{change.detail}</p>
+                          <p className={`text-[11px] truncate ${changePath ? 'text-accent hover:underline' : 'text-text-dim'}`}>
+                            {change.detail}
+                          </p>
                         </div>
                         <span className="flex-shrink-0 text-[10px] text-text-muted font-[var(--font-mono)]">
                           ×{change.count}

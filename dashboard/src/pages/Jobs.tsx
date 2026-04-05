@@ -32,9 +32,19 @@ function computeDuration(started: string, finished: string | null): string {
 
 const REFRESH_INTERVAL = 10_000;
 
+const STATUS_FILTERS = [
+  { label: 'All', value: '' },
+  { label: 'Running', value: 'running' },
+  { label: 'Failed', value: 'failed' },
+  { label: 'Completed', value: 'success' },
+] as const;
+
 export default function Jobs() {
   const queryClient = useQueryClient();
   const [isCancelling, setIsCancelling] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [retryingAgent, setRetryingAgent] = useState<string | null>(null);
 
   const { data: queueStatus, isLoading: queueLoading } = useQuery({
     queryKey: ['queue-status'],
@@ -48,10 +58,12 @@ export default function Jobs() {
     refetchInterval: REFRESH_INTERVAL,
   });
 
-  const agentRuns = agentRunsResp?.data ?? [];
+  const allAgentRuns = agentRunsResp?.data ?? [];
+  const agentRuns = statusFilter
+    ? allAgentRuns.filter((r) => r.status === statusFilter)
+    : allAgentRuns;
 
   const handleCancelAll = async () => {
-    if (!window.confirm('Cancel all running and pending jobs?')) return;
     setIsCancelling(true);
     try {
       await apiPost('/api/jobs/cancel');
@@ -62,6 +74,19 @@ export default function Jobs() {
       toast.error('Failed to cancel jobs');
     }
     setIsCancelling(false);
+    setConfirmCancel(false);
+  };
+
+  const handleRetry = async (agentName: string) => {
+    setRetryingAgent(agentName);
+    try {
+      await apiPost(`/api/crawl/${agentName}`);
+      toast.success(`Retry triggered for ${agentName}`);
+      queryClient.invalidateQueries({ queryKey: ['agent-runs-latest'] });
+    } catch {
+      toast.error(`Failed to retry ${agentName}`);
+    }
+    setRetryingAgent(null);
   };
 
   const isLoading = queueLoading || runsLoading;
@@ -70,13 +95,48 @@ export default function Jobs() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-2xl font-bold text-text-heading">Jobs</h2>
-        <button
-          onClick={handleCancelAll}
-          disabled={isCancelling}
-          className="px-3 py-1.5 rounded-lg text-xs font-medium bg-error/10 text-error border border-error/20 hover:bg-error/20 disabled:opacity-50"
-        >
-          {isCancelling ? 'Cancelling...' : 'Cancel All'}
-        </button>
+        <div className="flex items-center gap-2">
+          {confirmCancel ? (
+            <>
+              <span className="text-xs text-text-muted">Cancel all running and pending jobs?</span>
+              <button
+                onClick={handleCancelAll}
+                disabled={isCancelling}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-error text-white hover:bg-error/80 disabled:opacity-50"
+              >
+                {isCancelling ? 'Cancelling...' : 'Yes, Cancel All'}
+              </button>
+              <button
+                onClick={() => setConfirmCancel(false)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium text-text-muted hover:text-text-body border border-border"
+              >
+                No
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setConfirmCancel(true)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-error/10 text-error border border-error/20 hover:bg-error/20"
+            >
+              Cancel All
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Status filter */}
+      <div className="flex gap-1 mb-3">
+        {STATUS_FILTERS.map((f) => (
+          <button
+            key={f.value}
+            onClick={() => setStatusFilter(f.value)}
+            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+              statusFilter === f.value ? 'bg-accent/10 text-accent' : 'text-text-dim hover:text-text-muted'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
 
       {isLoading && <p className="text-text-muted">Loading job status...</p>}
@@ -107,6 +167,7 @@ export default function Jobs() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Started</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Duration</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Error</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -126,6 +187,17 @@ export default function Jobs() {
                   </td>
                   <td className="px-4 py-3 text-sm text-error max-w-xs truncate">
                     {run.error_message || '-'}
+                  </td>
+                  <td className="px-4 py-3 text-sm">
+                    {run.status === 'failed' && (
+                      <button
+                        onClick={() => handleRetry(run.agent_name)}
+                        disabled={retryingAgent === run.agent_name}
+                        className="text-[10px] font-medium text-accent hover:text-accent/80 border border-accent/20 rounded px-2 py-0.5 disabled:opacity-50"
+                      >
+                        {retryingAgent === run.agent_name ? 'Retrying...' : 'Retry'}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

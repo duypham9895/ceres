@@ -28,7 +28,9 @@ export default function Layout({ children }: { children: ReactNode }) {
         </div>
         <nav className="flex-1 p-3 space-y-0.5">
           {NAV_ITEMS.map(({ path, label, Icon }) => {
-            const active = location.pathname === path;
+            const active = path === '/'
+              ? location.pathname === '/'
+              : location.pathname === path || location.pathname.startsWith(path + '/');
             return (
               <Link key={path} to={path}
                 className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] transition-colors ${

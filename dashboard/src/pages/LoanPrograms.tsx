@@ -44,7 +44,7 @@ const EXPECTED_FIELDS = [
   'max_tenor_months',
 ] as const;
 
-const LOAN_TYPES = ['KPR', 'KKB', 'KTA', 'KMG'] as const;
+const LOAN_TYPES = ['KPR', 'KPA', 'KPT', 'MULTIGUNA', 'KENDARAAN', 'MODAL_KERJA', 'INVESTASI', 'OTHER'] as const;
 
 function ConfidencePill({ value }: { readonly value: number }) {
   const pct = Math.round(value * 100);
@@ -152,7 +152,7 @@ export default function LoanPrograms() {
       );
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: resp.statusText }));
-        alert(err.error || 'Export failed');
+        toast.error(err.error || 'Export failed');
         return;
       }
       const blob = await resp.blob();

@@ -97,6 +97,7 @@ export interface ExtendedDashboard {
 }
 
 export interface HeatmapBank {
+  readonly bank_id: string;
   readonly bank_code: string;
   readonly bank_name: string;
   readonly website_status: string;

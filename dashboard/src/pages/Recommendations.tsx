@@ -33,6 +33,7 @@ const LIMIT = 20;
 const TABS = [
   { label: 'All', value: '' },
   { label: 'Action Required', value: 'pending' },
+  { label: 'Reviewed', value: 'reviewed' },
   { label: 'In Progress', value: 'in_progress' },
   { label: 'Done', value: 'done' },
   { label: 'Dismissed', value: 'dismissed' },
@@ -160,11 +161,20 @@ function RecItem({ rec, onStatusChange, isPending }: RecItemProps) {
                 ))}
               </ul>
             ) : (
-              <p className="text-xs text-text-dim">No evidence data available.</p>
+              <p className="text-xs text-text-dim">No suggested actions for this recommendation.</p>
             )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {rec.status === 'pending' && (
+              <button
+                disabled={isPending}
+                onClick={() => onStatusChange(rec.id, 'reviewed')}
+                className="px-3 py-1 text-xs rounded bg-running/10 text-running border border-running/30 hover:bg-running/20 disabled:opacity-50"
+              >
+                Mark as Reviewed
+              </button>
+            )}
             {(rec.status === 'pending' || rec.status === 'reviewed') && (
               <button
                 disabled={isPending}

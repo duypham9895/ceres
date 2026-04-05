@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Fragment, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { apiFetch, apiPost } from '../api/client';
@@ -36,6 +36,17 @@ interface LoanProgram {
   loan_type: string;
   min_interest_rate: number | null;
   max_interest_rate: number | null;
+  min_amount: number | null;
+  max_amount: number | null;
+  min_tenor_months: number | null;
+  max_tenor_months: number | null;
+  rate_fixed: number | null;
+  rate_floating: number | null;
+  rate_promo: number | null;
+  rate_promo_duration_months: number | null;
+  data_confidence: number;
+  completeness_score: number;
+  source_url: string | null;
   updated_at: string;
 }
 
@@ -173,7 +184,9 @@ const LOGS_PER_PAGE = 10;
 
 export default function BankDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [logPage, setLogPage] = useState(1);
+  const [expandedProgram, setExpandedProgram] = useState<number | null>(null);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['bank', id],
@@ -194,6 +207,14 @@ export default function BankDetail() {
 
   return (
     <div className="space-y-6">
+      {/* Back navigation */}
+      <button
+        onClick={() => navigate('/banks')}
+        className="text-sm text-text-muted hover:text-text mb-4 flex items-center gap-1"
+      >
+        ← Back to Banks
+      </button>
+
       {/* Header with CTA buttons */}
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-text-heading">{bank.bank_name}</h2>
@@ -376,18 +397,100 @@ export default function BankDetail() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {programs.map((program) => (
-                <tr key={program.id} className="hover:bg-bg-hover">
-                  <td className="px-4 py-3 text-sm text-text-heading">{program.program_name}</td>
-                  <td className="px-4 py-3 text-sm text-text-secondary">{program.loan_type}</td>
-                  <td className="px-4 py-3 text-sm font-[var(--font-mono)] text-text-heading">
-                    {program.min_interest_rate != null && program.max_interest_rate != null
-                      ? `${program.min_interest_rate}% - ${program.max_interest_rate}%`
-                      : '-'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-text-secondary">{formatDate(program.updated_at)}</td>
-                </tr>
-              ))}
+              {programs.map((program) => {
+                const isExpanded = expandedProgram === program.id;
+                return (
+                  <Fragment key={program.id}>
+                    <tr
+                      className="hover:bg-bg-hover cursor-pointer transition-colors"
+                      onClick={() => setExpandedProgram(isExpanded ? null : program.id)}
+                    >
+                      <td className="px-4 py-3 text-sm text-text-heading">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] text-text-dim transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                          {program.program_name}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-text-secondary">{program.loan_type}</td>
+                      <td className="px-4 py-3 text-sm font-[var(--font-mono)] text-text-heading">
+                        {program.min_interest_rate != null && program.max_interest_rate != null
+                          ? `${program.min_interest_rate}% - ${program.max_interest_rate}%`
+                          : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-text-secondary">{formatDate(program.updated_at)}</td>
+                    </tr>
+                    {isExpanded && (
+                      <tr className="bg-bg-hover/50">
+                        <td colSpan={4} className="px-12 py-4">
+                          <div className="space-y-3">
+                            <div className="flex flex-wrap gap-6 text-sm">
+                              <div>
+                                <span className="text-text-muted">Amount: </span>
+                                <span className="font-[var(--font-mono)] text-text-secondary">
+                                  {program.min_amount != null || program.max_amount != null
+                                    ? `Rp ${(program.min_amount ?? 0).toLocaleString()} – Rp ${(program.max_amount ?? 0).toLocaleString()}`
+                                    : '–'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-text-muted">Tenor: </span>
+                                <span className="font-[var(--font-mono)] text-text-secondary">
+                                  {program.min_tenor_months != null || program.max_tenor_months != null
+                                    ? `${program.min_tenor_months ?? '?'} – ${program.max_tenor_months ?? '?'} months`
+                                    : '–'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-text-muted">Confidence: </span>
+                                <span className="font-[var(--font-mono)] text-text-secondary">
+                                  {Math.round((program.data_confidence ?? 0) * 100)}%
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-text-muted">Completeness: </span>
+                                <span className="font-[var(--font-mono)] text-text-secondary">
+                                  {Math.round((program.completeness_score ?? 0) * 100)}%
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {program.rate_fixed != null && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] bg-success/10 text-success">
+                                  Fixed {program.rate_fixed}%
+                                </span>
+                              )}
+                              {program.rate_floating != null && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] bg-running/10 text-running">
+                                  Float {program.rate_floating}%
+                                </span>
+                              )}
+                              {program.rate_promo != null && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] bg-warning/10 text-warning">
+                                  Promo {program.rate_promo}%{program.rate_promo_duration_months ? ` (${program.rate_promo_duration_months}mo)` : ''}
+                                </span>
+                              )}
+                            </div>
+                            {program.source_url && (
+                              <div className="text-sm">
+                                <span className="text-text-muted">Source: </span>
+                                <a
+                                  href={program.source_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-accent-light hover:underline"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {program.source_url}
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         )}

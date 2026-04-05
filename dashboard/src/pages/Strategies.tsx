@@ -1,4 +1,5 @@
 import { Fragment, useState, useRef, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { apiFetch, apiPost } from '../api/client';
@@ -83,6 +84,7 @@ function AntiBotBadge({ type }: { readonly type: string | null }) {
 const LIMIT = 20;
 
 export default function Strategies() {
+  const navigate = useNavigate();
   const {
     filters, setFilter, setFilters, clearAll, clearFilter,
     toQueryString, activeCount, page, setPage,
@@ -91,6 +93,7 @@ export default function Strategies() {
   const [selectedBanks, setSelectedBanks] = useState<ReadonlySet<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<string | null>(null);
   const [isBulkRunning, setIsBulkRunning] = useState(false);
+  const [sortAsc, setSortAsc] = useState(true);
   const headerCheckboxRef = useRef<HTMLInputElement>(null);
 
   const queryString = toQueryString();
@@ -112,8 +115,12 @@ export default function Strategies() {
   });
 
   const sorted = useMemo(
-    () => data ? [...data].sort((a, b) => a.success_rate - b.success_rate) : [],
-    [data],
+    () => data
+      ? [...data].sort((a, b) => sortAsc
+          ? a.success_rate - b.success_rate
+          : b.success_rate - a.success_rate)
+      : [],
+    [data, sortAsc],
   );
 
   // NOTE: Stats computed from current page only (max LIMIT items).
@@ -308,7 +315,12 @@ export default function Strategies() {
                 />
               </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Bank</th>
-              <th className="w-28 px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Status</th>
+              <th
+                className="w-28 px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider cursor-pointer select-none hover:text-text-secondary"
+                onClick={() => setSortAsc((prev) => !prev)}
+              >
+                Status {sortAsc ? '▲' : '▼'}
+              </th>
               <th className="w-24 px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Anti-Bot</th>
               <th className="w-24 px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Trend</th>
               <th className="w-24 px-4 py-3 text-left text-xs font-medium text-text-muted uppercase tracking-wider">Updated</th>
@@ -335,7 +347,15 @@ export default function Strategies() {
                       <div className="flex items-center gap-2">
                         <span className={`text-[10px] text-text-dim transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
                         <div>
-                          <p className="text-sm font-[var(--font-mono)] font-medium text-text-heading">{strategy.bank_code}</p>
+                          <button
+                            className="text-sm font-[var(--font-mono)] font-medium text-accent hover:text-accent/80 hover:underline text-left"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/banks/${strategy.bank_code}`);
+                            }}
+                          >
+                            {strategy.bank_code}
+                          </button>
                           <p className="text-xs text-text-muted">{strategy.bank_name}</p>
                         </div>
                       </div>

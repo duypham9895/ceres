@@ -162,7 +162,7 @@ async def dashboard_overview(request: Request) -> dict:
         "banks_by_status": status_counts,
         "success_rate": success_rate,
         "crawl_stats": stats,
-        "quality_avg": quality,
+        "quality_avg": float(quality.get("avg_completeness", 0.0)) if isinstance(quality, dict) else float(quality or 0.0),
         "sparklines": sparklines,
         "deltas": {
             "banks_week": banks_week,
@@ -1022,6 +1022,7 @@ async def rates_heatmap(
                 "data_confidence": (
                     float(row["data_confidence"]) if row["data_confidence"] is not None else None
                 ),
+                "trend_7d": None,
             }
         if row["loan_type"] and row["min_rate"] is not None:
             banks[code]["rates"][row["loan_type"]] = float(row["min_rate"])
