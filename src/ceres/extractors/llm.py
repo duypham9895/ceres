@@ -31,31 +31,42 @@ def _strip_html_to_text(html: str) -> str:
     return text
 
 EXTRACTION_PROMPT = """\
-You are an expert at extracting structured loan program data from bank websites.
+You are an expert at extracting structured loan program data from Indonesian bank websites.
 
-Given the following HTML content from {bank_name}'s website, extract all loan programs \
-and return a JSON object with this exact structure:
+Given the following text content from {bank_name}'s website, extract ONLY real consumer \
+loan products that a customer can apply for. Each program must have a clear product name \
+and ideally include interest rates, loan amounts, or tenor information.
+
+INCLUDE: KPR (mortgage), KPA (apartment), KPT (land), KKB/kredit kendaraan (vehicle), \
+multiguna (multipurpose), kredit modal kerja (working capital), kredit investasi, \
+kredit pendidikan, refinancing, take over.
+
+EXCLUDE: Navigation menu items, page titles, "Simulasi Kredit" tools, "Suku Bunga Dasar" \
+(base rate tables), internal/corporate credit facilities (kredit sindikasi, kredit BLUD, \
+kredit BPR), and general category headings that are not actual products.
+
+Return a JSON object with this exact structure:
 
 {{
   "programs": [
     {{
-      "program_name": "string",
-      "loan_type": "string (e.g. KPR, KPA, KKB, Multiguna)",
-      "min_interest_rate": number_or_null,
-      "max_interest_rate": number_or_null,
-      "min_tenor_months": number_or_null,
-      "max_tenor_months": number_or_null,
-      "min_amount": number_or_null,
-      "max_amount": number_or_null,
-      "fixed_rate_period_months": number_or_null,
-      "notes": "string_or_null"
+      "program_name": "string — the actual product name (e.g. 'KPR BRI', 'Mandiri KPR Flexible')",
+      "loan_type": "string — one of: KPR, KPA, KPT, MULTIGUNA, KENDARAAN, MODAL_KERJA, INVESTASI, PENDIDIKAN, PMI, TAKE_OVER, REFINANCING, OTHER",
+      "min_interest_rate": "number or null — annual percentage (e.g. 3.5 means 3.5%)",
+      "max_interest_rate": "number or null",
+      "min_tenor_months": "number or null — in months",
+      "max_tenor_months": "number or null — in months (e.g. 20 years = 240)",
+      "min_amount": "number or null — in Rupiah (e.g. 100000000 for 100 juta)",
+      "max_amount": "number or null — in Rupiah",
+      "fixed_rate_period_months": "number or null — how long the fixed rate lasts",
+      "notes": "string or null — any special conditions, promo details"
     }}
   ]
 }}
 
-Return ONLY the JSON object, no other text. If no programs are found, return {{"programs": []}}.
+Return ONLY the JSON object, no other text. If no real loan products are found, return {{"programs": []}}.
 
-HTML content:
+Text content:
 {html}
 """
 
