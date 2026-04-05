@@ -35,9 +35,9 @@ class Database:
             self._dsn,
             min_size=self._min_size,
             max_size=self._max_size,
-            # Use default statement cache (100) for prepared statement reuse;
-            # cache_size=0 was previously set to work around pgbouncer but
-            # we connect directly to Postgres so caching improves performance.
+            # Supabase uses PgBouncer in transaction mode, which breaks
+            # asyncpg's prepared statement cache. Must be 0.
+            statement_cache_size=0,
         )
 
     async def disconnect(self) -> None:
