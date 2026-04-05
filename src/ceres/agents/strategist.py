@@ -270,16 +270,17 @@ class StrategistAgent(BaseAgent):
     async def _discover_loan_urls(
         self, page: Any, base_url: str
     ) -> list[str]:
-        """Discover loan-related URLs by probing common paths.
+        """Discover loan-related URLs by probing common paths AND scanning page links.
 
-        For each path in COMMON_LOAN_PATHS, navigates to base_url + path.
-        If the response status is < 400 and the page contains loan keywords,
-        the URL is included.
-
-        Falls back to [base_url] if no loan URLs are found.
+        Strategy:
+        1. Probe hardcoded COMMON_LOAN_PATHS
+        2. Go back to homepage, scan all <a> links for loan keywords
+        3. Deduplicate and return unique loan URLs
+        Falls back to [base_url] if nothing is found.
         """
-        found_urls: list[str] = []
+        found_urls: set[str] = set()
 
+        # Phase 1: Probe common loan paths
         for path in COMMON_LOAN_PATHS:
             url = f"{base_url}{path}"
             try:
@@ -293,12 +294,53 @@ class StrategistAgent(BaseAgent):
                 content_lower = content.lower()
 
                 if any(kw in content_lower for kw in _LOAN_KEYWORDS):
-                    found_urls.append(url)
+                    found_urls.add(url)
             except Exception:
                 self.logger.debug("Failed to probe %s", url)
                 continue
 
+        # Phase 2: Scan homepage links for loan-related URLs
+        try:
+            await page.goto(base_url, wait_until="domcontentloaded", timeout=15000)
+            links = await page.evaluate("""(baseUrl) => {
+                const loanPatterns = /\\b(kpr|kpa|kpt|kredit|pinjaman|loan|mortgage|multiguna|kendaraan|refinanc|take.?over|modal.?kerja|investasi)\\b/i;
+                const excludePatterns = /\\b(simulasi|kalkulator|calculator|karir|career|investor|annual.?report|csr|tentang|about|contact|faq|syarat|ketentuan|privacy|sitemap)\\b/i;
+                const seen = new Set();
+                const results = [];
+
+                for (const a of document.querySelectorAll('a[href]')) {
+                    let href = a.href;
+                    if (!href || href.startsWith('javascript:') || href.startsWith('#') || href.startsWith('mailto:')) continue;
+
+                    // Must be same domain
+                    try {
+                        const url = new URL(href);
+                        const base = new URL(baseUrl);
+                        if (url.hostname !== base.hostname) continue;
+                        href = url.origin + url.pathname;  // strip query/hash
+                    } catch { continue; }
+
+                    if (seen.has(href)) continue;
+                    seen.add(href);
+
+                    // Check both URL path and link text for loan keywords
+                    const text = (a.textContent || '').trim();
+                    const fullText = href.toLowerCase() + ' ' + text.toLowerCase();
+
+                    if (loanPatterns.test(fullText) && !excludePatterns.test(fullText)) {
+                        results.push(href);
+                    }
+                }
+                return results;
+            }""", base_url)
+
+            for link in links[:20]:  # cap at 20 to avoid over-crawling
+                if link not in found_urls:
+                    found_urls.add(link)
+        except Exception:
+            self.logger.debug("Failed to scan homepage links for %s", base_url)
+
         if not found_urls:
             return [base_url]
 
-        return found_urls
+        return sorted(found_urls)
