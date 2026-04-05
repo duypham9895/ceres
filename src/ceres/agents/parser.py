@@ -288,6 +288,11 @@ class ParserAgent(BaseAgent):
             return None
 
         min_rate, max_rate = normalize_rate(context_text)
+
+        # A loan program without any interest rate is useless for comparison
+        if min_rate is None and max_rate is None:
+            return None
+
         min_amount, max_amount = normalize_amount(context_text)
         min_tenure, max_tenure = normalize_tenure(context_text)
 
@@ -322,6 +327,14 @@ class ParserAgent(BaseAgent):
         """
         program_name = prog_data.get("program_name")
         if not program_name:
+            return None
+
+        # A loan program without any interest rate is useless for comparison
+        has_rate = (
+            prog_data.get("min_interest_rate") is not None
+            or prog_data.get("max_interest_rate") is not None
+        )
+        if not has_rate:
             return None
 
         program = {

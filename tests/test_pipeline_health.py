@@ -110,7 +110,7 @@ class TestParserStatsAccumulation:
 
         mock_llm = AsyncMock()
         mock_llm.extract_loan_data = AsyncMock(return_value={
-            "programs": [{"program_name": "Test KPR", "loan_type": "KPR"}]
+            "programs": [{"program_name": "Test KPR", "loan_type": "KPR", "min_interest_rate": 5.5, "max_interest_rate": 8.0}]
         })
 
         agent = ParserAgent(db=db, llm_extractor=mock_llm)
@@ -146,7 +146,7 @@ class TestParserStatsAccumulation:
 
         mock_llm = AsyncMock()
         mock_llm.extract_loan_data = AsyncMock(return_value={
-            "programs": [{"program_name": "Test", "loan_type": "KPR"}]
+            "programs": [{"program_name": "Test", "loan_type": "KPR", "min_interest_rate": 5.5}]
         })
 
         agent = ParserAgent(db=db, llm_extractor=mock_llm)
@@ -180,8 +180,8 @@ class TestParserStatsAccumulation:
         mock_llm = AsyncMock()
         mock_llm.extract_loan_data = AsyncMock(return_value={
             "programs": [
-                {"program_name": "KPR A", "loan_type": "KPR"},
-                {"program_name": "KPR B", "loan_type": "KPR"},
+                {"program_name": "KPR A", "loan_type": "KPR", "min_interest_rate": 5.5, "max_interest_rate": 8.0},
+                {"program_name": "KPR B", "loan_type": "KPR", "min_interest_rate": 6.0, "max_interest_rate": 9.0},
             ]
         })
 
@@ -219,7 +219,7 @@ class TestParserStatsAccumulation:
 
         mock_llm = AsyncMock()
         mock_llm.extract_loan_data = AsyncMock(return_value={
-            "programs": [{"program_name": "Test", "loan_type": "KPR"}]
+            "programs": [{"program_name": "Test", "loan_type": "KPR", "min_interest_rate": 5.5}]
         })
 
         agent = ParserAgent(db=db, llm_extractor=mock_llm)

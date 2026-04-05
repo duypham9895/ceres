@@ -447,16 +447,13 @@ class Database:
             )
             return None
 
-        # A1b: Reject programs with no financial data — they have no value
-        has_any_financial = any([
-            min_interest_rate, max_interest_rate,
-            min_amount, max_amount,
-            min_tenor_months, max_tenor_months,
-        ])
-        if not has_any_financial:
+        # A1b: Reject programs without interest rate — a loan program
+        # without a rate is useless for comparison. Tenor or amount alone
+        # has no value to the end user.
+        has_rate = min_interest_rate is not None or max_interest_rate is not None
+        if not has_rate:
             logger.warning(
-                "Skipping loan program '%s' for bank %s: no financial data "
-                "(no rates, amounts, or tenor)",
+                "Skipping loan program '%s' for bank %s: no interest rate data",
                 program_name, bank_id,
             )
             return None
