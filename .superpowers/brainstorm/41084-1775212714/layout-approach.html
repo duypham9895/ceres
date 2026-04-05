@@ -1,0 +1,190 @@
+<h2>Layout Architecture — How should information flow?</h2>
+<p class="subtitle">Each approach organizes the same data differently. Click the one that feels right.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Executive Summary → Drill Down</h3>
+      <p>Top-to-bottom flow. Glanceable health strip at top, then rate intelligence, then details on demand.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-body" style="padding:12px; font-size:13px;">
+          <div style="display:flex; gap:8px; margin-bottom:8px;">
+            <div style="flex:1; background:#1a3a2a; padding:8px; border-radius:6px; text-align:center; border:1px solid #2d5a3d;">
+              <div style="color:#4ade80; font-size:16px; font-weight:700;">58</div>
+              <div style="color:#888; font-size:10px;">Banks ↑3</div>
+            </div>
+            <div style="flex:1; background:#1a3a2a; padding:8px; border-radius:6px; text-align:center; border:1px solid #2d5a3d;">
+              <div style="color:#4ade80; font-size:16px; font-weight:700;">288</div>
+              <div style="color:#888; font-size:10px;">Programs ↑12</div>
+            </div>
+            <div style="flex:1; background:#3a2a1a; padding:8px; border-radius:6px; text-align:center; border:1px solid #5a4a2d;">
+              <div style="color:#fbbf24; font-size:16px; font-weight:700;">64%</div>
+              <div style="color:#888; font-size:10px;">Success ↓8%</div>
+            </div>
+            <div style="flex:1; background:#1a2a3a; padding:8px; border-radius:6px; text-align:center; border:1px solid #2d4a5a;">
+              <div style="color:#60a5fa; font-size:16px; font-weight:700;">72%</div>
+              <div style="color:#888; font-size:10px;">Data Quality</div>
+            </div>
+          </div>
+          <div style="background:#1e1e2e; padding:8px; border-radius:6px; margin-bottom:8px; border:1px solid #333;">
+            <div style="color:#aaa; font-size:10px; margin-bottom:4px;">📊 Rate Intelligence — KPR Rates by Bank</div>
+            <div style="display:flex; gap:4px; font-size:9px; color:#666;">
+              <div style="flex:2;">Bank</div><div style="flex:1;">Min</div><div style="flex:1;">Max</div><div style="flex:1;">Trend</div><div style="flex:1;">Quality</div>
+            </div>
+            <div style="display:flex; gap:4px; font-size:9px; color:#ccc; margin-top:2px;">
+              <div style="flex:2;">BCA</div><div style="flex:1; color:#4ade80;">3.5%</div><div style="flex:1;">8.2%</div><div style="flex:1;">↓</div><div style="flex:1;">██░ 85%</div>
+            </div>
+            <div style="display:flex; gap:4px; font-size:9px; color:#ccc; margin-top:2px;">
+              <div style="flex:2;">BRI</div><div style="flex:1; color:#fbbf24;">6.2%</div><div style="flex:1;">12%</div><div style="flex:1;">→</div><div style="flex:1;">█░░ 60%</div>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <div style="flex:1; background:#2a1a1a; padding:8px; border-radius:6px; border:1px solid #5a2d2d;">
+              <div style="color:#aaa; font-size:10px;">⚠️ Needs Attention</div>
+              <div style="color:#f87171; font-size:9px; margin-top:4px;">5 banks unreachable · 3 anti-bot blocked</div>
+            </div>
+            <div style="flex:1; background:#1e1e2e; padding:8px; border-radius:6px; border:1px solid #333;">
+              <div style="color:#aaa; font-size:10px;">🔄 Recent Activity</div>
+              <div style="color:#999; font-size:9px; margin-top:4px;">Crawled 40 banks · 12 new programs</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Split Panel — Health Left, Intelligence Right</h3>
+      <p>Two-column layout. Left panel = system health & pipeline. Right panel = rate data & quality. Both visible simultaneously.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-body" style="padding:12px; font-size:13px;">
+          <div style="display:flex; gap:8px;">
+            <div style="flex:1; border-right:1px solid #333; padding-right:8px;">
+              <div style="color:#aaa; font-size:10px; margin-bottom:6px; font-weight:600;">🏥 SYSTEM HEALTH</div>
+              <div style="background:#1a3a2a; padding:6px; border-radius:4px; margin-bottom:4px; border:1px solid #2d5a3d;">
+                <div style="color:#4ade80; font-size:14px; font-weight:700;">64% Success</div>
+                <div style="font-size:9px; color:#888;">↓ 8% from last week</div>
+              </div>
+              <div style="font-size:9px; color:#f87171; margin-bottom:2px;">● 5 unreachable banks</div>
+              <div style="font-size:9px; color:#fbbf24; margin-bottom:2px;">● 3 anti-bot blocked</div>
+              <div style="font-size:9px; color:#4ade80; margin-bottom:4px;">● 40 active & healthy</div>
+              <div style="background:#1e1e2e; padding:6px; border-radius:4px; margin-top:6px; border:1px solid #333;">
+                <div style="color:#aaa; font-size:9px;">Pipeline</div>
+                <div style="font-size:9px; color:#4ade80;">✓ Scout → ✓ Strategist → ▶ Crawler → ○ Learning</div>
+              </div>
+            </div>
+            <div style="flex:1.5; padding-left:8px;">
+              <div style="color:#aaa; font-size:10px; margin-bottom:6px; font-weight:600;">📊 RATE INTELLIGENCE</div>
+              <div style="display:flex; gap:4px; font-size:9px; color:#666;">
+                <div style="flex:2;">Bank</div><div style="flex:1;">KPR</div><div style="flex:1;">KPA</div><div style="flex:1;">Quality</div>
+              </div>
+              <div style="display:flex; gap:4px; font-size:9px; color:#ccc; margin-top:3px;">
+                <div style="flex:2;">BCA</div><div style="flex:1; color:#4ade80;">3.5%</div><div style="flex:1; color:#4ade80;">4.1%</div><div style="flex:1;">██░</div>
+              </div>
+              <div style="display:flex; gap:4px; font-size:9px; color:#ccc; margin-top:3px;">
+                <div style="flex:2;">BRI</div><div style="flex:1; color:#fbbf24;">6.2%</div><div style="flex:1;">—</div><div style="flex:1;">█░░</div>
+              </div>
+              <div style="display:flex; gap:4px; font-size:9px; color:#ccc; margin-top:3px;">
+                <div style="flex:2;">Mandiri</div><div style="flex:1; color:#4ade80;">4.8%</div><div style="flex:1; color:#4ade80;">5.0%</div><div style="flex:1;">███</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Dashboard Zones — Compact Health Bar + Full Intelligence (Recommended)</h3>
+      <p>Thin, dense health bar at very top (like a status bar). Rest of page = rich rate intelligence, quality metrics, and actionable insights. Health is "glance up", intelligence is "lean in".</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-body" style="padding:0; font-size:13px;">
+          <div style="background:linear-gradient(90deg, #1a2a1a, #1e1e2e, #2a1a1a); padding:8px 12px; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #333;">
+            <div style="display:flex; gap:16px; font-size:10px;">
+              <span style="color:#4ade80;">● 40 active</span>
+              <span style="color:#fbbf24;">● 13 unreachable</span>
+              <span style="color:#f87171;">● 5 blocked</span>
+            </div>
+            <div style="font-size:10px; color:#60a5fa;">Pipeline: Crawler ▶ 34/58 banks</div>
+            <div style="font-size:10px; color:#fbbf24;">64% success (7d)</div>
+          </div>
+          <div style="padding:12px;">
+            <div style="display:flex; gap:8px; margin-bottom:10px;">
+              <div style="flex:1; background:#1e1e2e; padding:10px; border-radius:6px; border:1px solid #333;">
+                <div style="color:#888; font-size:9px;">BANKS MONITORED</div>
+                <div style="display:flex; align-items:baseline; gap:6px;">
+                  <span style="color:#fff; font-size:20px; font-weight:700;">58</span>
+                  <span style="color:#4ade80; font-size:10px;">+3 this week</span>
+                </div>
+              </div>
+              <div style="flex:1; background:#1e1e2e; padding:10px; border-radius:6px; border:1px solid #333;">
+                <div style="color:#888; font-size:9px;">LOAN PROGRAMS</div>
+                <div style="display:flex; align-items:baseline; gap:6px;">
+                  <span style="color:#fff; font-size:20px; font-weight:700;">288</span>
+                  <span style="color:#4ade80; font-size:10px;">+12 new</span>
+                </div>
+              </div>
+              <div style="flex:1; background:#1e1e2e; padding:10px; border-radius:6px; border:1px solid #333;">
+                <div style="color:#888; font-size:9px;">AVG KPR RATE</div>
+                <div style="display:flex; align-items:baseline; gap:6px;">
+                  <span style="color:#fff; font-size:20px; font-weight:700;">7.2%</span>
+                  <span style="color:#4ade80; font-size:10px;">↓ 0.3%</span>
+                </div>
+              </div>
+              <div style="flex:1; background:#1e1e2e; padding:10px; border-radius:6px; border:1px solid #333;">
+                <div style="color:#888; font-size:9px;">DATA QUALITY</div>
+                <div style="display:flex; align-items:baseline; gap:6px;">
+                  <span style="color:#fff; font-size:20px; font-weight:700;">72%</span>
+                  <span style="color:#60a5fa; font-size:10px;">avg completeness</span>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <div style="flex:2; background:#1e1e2e; padding:10px; border-radius:6px; border:1px solid #333;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                  <span style="color:#aaa; font-size:10px; font-weight:600;">Rate Intelligence</span>
+                  <span style="color:#666; font-size:9px;">KPR · KPA · Multiguna · Kendaraan</span>
+                </div>
+                <div style="display:flex; gap:4px; font-size:9px; color:#666; padding-bottom:4px; border-bottom:1px solid #2a2a3a;">
+                  <div style="flex:2;">Bank</div><div style="flex:1;">Min Rate</div><div style="flex:1;">Max Rate</div><div style="flex:1;">Trend</div><div style="flex:1;">Confidence</div>
+                </div>
+                <div style="display:flex; gap:4px; font-size:9px; color:#ddd; padding:4px 0; border-bottom:1px solid #1a1a2a;">
+                  <div style="flex:2;">🏦 BCA Syariah</div><div style="flex:1; color:#4ade80;">3.5%</div><div style="flex:1;">8.2%</div><div style="flex:1;">↓ 0.2%</div><div style="flex:1;"><span style="color:#4ade80;">●●●</span><span style="color:#333;">●●</span></div>
+                </div>
+                <div style="display:flex; gap:4px; font-size:9px; color:#ddd; padding:4px 0; border-bottom:1px solid #1a1a2a;">
+                  <div style="flex:2;">🏦 Bank Mandiri</div><div style="flex:1; color:#4ade80;">4.8%</div><div style="flex:1;">11.5%</div><div style="flex:1;">→ 0%</div><div style="flex:1;"><span style="color:#4ade80;">●●●●</span><span style="color:#333;">●</span></div>
+                </div>
+                <div style="display:flex; gap:4px; font-size:9px; color:#ddd; padding:4px 0;">
+                  <div style="flex:2;">🏦 BRI</div><div style="flex:1; color:#fbbf24;">6.2%</div><div style="flex:1;">12.0%</div><div style="flex:1; color:#f87171;">↑ 0.5%</div><div style="flex:1;"><span style="color:#fbbf24;">●●</span><span style="color:#333;">●●●</span></div>
+                </div>
+              </div>
+              <div style="flex:1;">
+                <div style="background:#2a1a1a; padding:10px; border-radius:6px; margin-bottom:8px; border:1px solid #5a2d2d;">
+                  <div style="color:#f87171; font-size:10px; font-weight:600;">⚠ Needs Attention</div>
+                  <div style="font-size:9px; color:#ccc; margin-top:4px; line-height:1.6;">
+                    5 banks unreachable<br>
+                    3 anti-bot blocked<br>
+                    8 low-quality programs
+                  </div>
+                </div>
+                <div style="background:#1e1e2e; padding:10px; border-radius:6px; border:1px solid #333;">
+                  <div style="color:#aaa; font-size:10px; font-weight:600;">📋 Today's Changes</div>
+                  <div style="font-size:9px; color:#ccc; margin-top:4px; line-height:1.6;">
+                    12 new programs found<br>
+                    3 rate decreases detected<br>
+                    2 banks came back online
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

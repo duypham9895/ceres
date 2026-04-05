@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, Optional
+
+from lxml import html
 
 from ceres.agents.base import BaseAgent
 from ceres.database import Database
@@ -26,6 +29,20 @@ from ceres.models import calculate_completeness_score
 LLM_CONFIDENCE_THRESHOLD = 0.5
 
 logger = logging.getLogger(__name__)
+
+_PROGRAM_KEYWORDS = re.compile(
+    r"\b(kpr|kpa|kpt|kkb|multiguna|kendaraan|kredit|pinjaman|mortgage|refinancing|take over)\b",
+    re.IGNORECASE,
+)
+_WHITESPACE_RE = re.compile(r"\s+")
+_FALLBACK_NAME_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bKPR(?:\s+[A-Z0-9][A-Za-z0-9&()/.-]*)?", re.IGNORECASE),
+    re.compile(r"\bKPA(?:\s+[A-Z0-9][A-Za-z0-9&()/.-]*)?", re.IGNORECASE),
+    re.compile(r"\bKPT(?:\s+[A-Z0-9][A-Za-z0-9&()/.-]*)?", re.IGNORECASE),
+    re.compile(r"\bKKB(?:\s+[A-Z0-9][A-Za-z0-9&()/.-]*)?", re.IGNORECASE),
+    re.compile(r"\bKredit\s+Multiguna(?:\s+[A-Z0-9][A-Za-z0-9&()/.-]*)?", re.IGNORECASE),
+    re.compile(r"\bPinjaman(?:\s+[A-Z0-9][A-Za-z0-9&()/.-]*)?", re.IGNORECASE),
+)
 
 
 class ParserAgent(BaseAgent):
@@ -46,6 +63,9 @@ class ParserAgent(BaseAgent):
     async def run(self, bank_code: Optional[str] = None, **kwargs) -> dict:
         """Parse unparsed HTML rows into loan programs.
 
+        Fetches row metadata first (no HTML), then loads HTML one row at a
+        time to avoid holding hundreds of MB in memory simultaneously.
+
         Args:
             bank_code: Optional filter to parse only a specific bank.
 
@@ -56,19 +76,52 @@ class ParserAgent(BaseAgent):
         self.logger.info(f"Found {len(rows)} unparsed rows, llm_extractor={self._llm_extractor is not None}")
         programs_parsed = 0
         errors: list[str] = []
+        programs_by_log: dict[str, int] = {}
 
         for raw in rows:
             try:
-                programs = await self._parse_page(raw)
+                # Load HTML one at a time to cap memory usage
+                html = await self.db.fetch_raw_html_by_id(
+                    raw_data_id=str(raw["id"]),
+                )
+                if html is None:
+                    self.logger.warning(f"Raw data {raw['id']} disappeared, skipping")
+                    continue
+
+                # Build a view with html for _parse_page, then drop the reference
+                raw_with_html = {**raw, "raw_html": html}
+                programs = await self._parse_page(raw_with_html)
+                del raw_with_html  # release HTML memory immediately
+
                 self.logger.info(f"{raw.get('bank_code', '?')}: {len(programs)} programs from {raw.get('page_url', '?')[:60]}")
                 for program in programs:
                     await self.db.upsert_loan_program(**program)
                     programs_parsed += 1
-                await self.db.mark_parsed(raw_data_id=str(raw["id"]))
+                await self.db.mark_parsed(
+                    raw_data_id=str(raw["id"]),
+                    programs_produced=len(programs),
+                )
+
+                crawl_log_id = raw.get("crawl_log_id")
+                if crawl_log_id is not None:
+                    log_key = str(crawl_log_id)
+                    programs_by_log[log_key] = (
+                        programs_by_log.get(log_key, 0) + len(programs)
+                    )
             except Exception as exc:
                 error_msg = f"Failed to parse raw_id={raw['id']}: {exc}"
                 self.logger.error(error_msg)
                 errors.append(error_msg)
+
+        for log_id, count in programs_by_log.items():
+            try:
+                await self.db.update_crawl_log_programs(
+                    crawl_log_id=log_id, programs_found=count,
+                )
+            except Exception:
+                self.logger.exception(
+                    "Failed to update programs_found for crawl_log %s", log_id,
+                )
 
         self.logger.info(f"Done: {programs_parsed} programs, {len(errors)} errors")
         return {"programs_parsed": programs_parsed, "errors": errors}
@@ -101,6 +154,9 @@ class ParserAgent(BaseAgent):
                     if program is not None:
                         programs.append(program)
 
+        if not programs:
+            programs = self._extract_programs_heuristically(raw)
+
         if not programs and self._llm_extractor is not None:
             logger.info(
                 "LLM fallback for %s (%s)",
@@ -114,6 +170,66 @@ class ParserAgent(BaseAgent):
                 program = self._build_program_from_llm(prog_data, raw)
                 if program is not None:
                     programs.append(program)
+
+        return programs
+
+    def _extract_programs_heuristically(self, raw: dict) -> list[dict]:
+        """Best-effort extraction when selectors are absent and LLM is unavailable."""
+        html_content = raw.get("raw_html", "")
+        if not html_content.strip():
+            return []
+
+        try:
+            tree = html.fromstring(html_content)
+        except Exception:
+            return []
+
+        programs: list[dict] = []
+        seen_names: set[str] = set()
+
+        for element in tree.cssselect("h1, h2, h3, h4, h5, a, button, strong, b"):
+            name = _normalize_text(element.text_content())
+            if not _is_program_name(name):
+                continue
+
+            context_text = _extract_context_text(element)
+            program = self._build_program_from_text(
+                program_name=name,
+                context_text=context_text,
+                raw=raw,
+                confidence=0.35,
+            )
+            if program is None:
+                continue
+
+            dedupe_key = program["program_name"].casefold()
+            if dedupe_key in seen_names:
+                continue
+            seen_names.add(dedupe_key)
+            programs.append(program)
+
+        if programs:
+            return programs
+
+        full_text = _normalize_text(tree.text_content())
+        for pattern in _FALLBACK_NAME_PATTERNS:
+            for match in pattern.finditer(full_text):
+                name = _normalize_text(match.group(0))
+                if not _is_program_name(name):
+                    continue
+                dedupe_key = name.casefold()
+                if dedupe_key in seen_names:
+                    continue
+                program = self._build_program_from_text(
+                    program_name=name,
+                    context_text=full_text,
+                    raw=raw,
+                    confidence=0.25,
+                )
+                if program is None:
+                    continue
+                seen_names.add(dedupe_key)
+                programs.append(program)
 
         return programs
 
@@ -157,6 +273,38 @@ class ParserAgent(BaseAgent):
             "data_confidence": confidence_base,
         }
 
+        program["completeness_score"] = calculate_completeness_score(program)
+        return program
+
+    def _build_program_from_text(
+        self,
+        *,
+        program_name: str,
+        context_text: str,
+        raw: dict,
+        confidence: float,
+    ) -> dict | None:
+        if not program_name:
+            return None
+
+        min_rate, max_rate = normalize_rate(context_text)
+        min_amount, max_amount = normalize_amount(context_text)
+        min_tenure, max_tenure = normalize_tenure(context_text)
+
+        program = {
+            "bank_id": str(raw["bank_id"]),
+            "program_name": program_name,
+            "loan_type": normalize_loan_type(program_name),
+            "source_url": raw["page_url"],
+            "min_interest_rate": min_rate,
+            "max_interest_rate": max_rate,
+            "min_amount": min_amount,
+            "max_amount": max_amount,
+            "min_tenor_months": min_tenure,
+            "max_tenor_months": max_tenure,
+            "data_confidence": confidence,
+            "raw_data": {"extraction_method": "heuristic"},
+        }
         program["completeness_score"] = calculate_completeness_score(program)
         return program
 
@@ -205,6 +353,32 @@ def _parse_selectors(selectors_raw: str | None) -> dict | None:
         return json.loads(selectors_raw)
     except (json.JSONDecodeError, TypeError):
         return None
+
+
+def _normalize_text(text: str) -> str:
+    return _WHITESPACE_RE.sub(" ", text).strip()
+
+
+def _is_program_name(text: str) -> bool:
+    return bool(
+        text
+        and len(text) <= 120
+        and _PROGRAM_KEYWORDS.search(text)
+    )
+
+
+def _extract_context_text(element: html.HtmlElement) -> str:
+    """Use a nearby section/article/div as extraction context when possible."""
+    current = element
+    for _ in range(4):
+        parent = current.getparent()
+        if parent is None:
+            break
+        current = parent
+        text = _normalize_text(current.text_content())
+        if 40 <= len(text) <= 2000:
+            return text
+    return _normalize_text(element.text_content())
 
 
 def _run_sync(coro):

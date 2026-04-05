@@ -21,7 +21,7 @@ class TestPubSubBridge:
 
         broadcast.assert_called_once()
         call_arg = broadcast.call_args[0][0]
-        assert call_arg["type"] == "job_status"
+        assert call_arg["type"] == "job_start"  # status=running -> job_start
         assert call_arg["job_id"] == "j1"
         assert call_arg["agent"] == "strategist"
         assert call_arg["status"] == "running"

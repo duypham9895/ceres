@@ -1,0 +1,42 @@
+<h2>Dashboard Philosophy — Who Is This For?</h2>
+<p class="subtitle">The #1 reason dashboards fail is trying to serve everyone. Let's pick a primary audience.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Ops Engineer — "Is everything running?"</h3>
+      <p>Pipeline health, error rates, failing banks, active crawls. Real-time focus. Think: Datadog/Grafana.</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>Focus</h4><ul><li>Crawl success/failure by bank</li><li>Error breakdown & alerts</li><li>Strategy health & anti-bot signals</li><li>Pipeline throughput metrics</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Product/Business — "What rates are moving?"</h3>
+      <p>Rate trends, competitive intelligence, data quality scores. Analytical focus. Think: Bloomberg terminal lite.</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>Focus</h4><ul><li>Rate trends over time (KPR, KPA, etc.)</li><li>Bank-by-bank rate comparison</li><li>Data completeness & confidence</li><li>New programs discovered</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Hybrid — "Health + Intelligence" (Recommended)</h3>
+      <p>Top section = system health snapshot (green/red at a glance). Bottom section = rate intelligence & data quality. The Overview should answer: "Is the system healthy AND what did we learn today?"</p>
+      <div class="pros-cons" style="margin-top:12px">
+        <div class="pros"><h4>Focus</h4><ul><li>Health strip: pipeline status, success rate, errors</li><li>Intelligence: rate heatmap with REAL data, trends</li><li>Quality: completeness scores, confidence</li><li>Activity: meaningful events only (no pings)</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px; padding:16px; background:rgba(255,255,255,0.05); border-radius:8px;">
+  <h3>💡 Context from your data</h3>
+  <p style="color:#999; line-height:1.6;">Your DB has <strong>rich data not being surfaced</strong>: completeness_score, data_confidence, rate_fixed/floating/promo, strategy success rates, anti-bot detection, crawl streaks, and Ringkas recommendations. The current Overview shows ~20% of available intelligence.</p>
+</div>

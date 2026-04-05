@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from ceres.agents.base import BaseAgent
+from ceres.browser.manager import BrowserManager, BrowserType
 from ceres.browser.stealth import detect_anti_bot
 from ceres.database import Database
 
@@ -44,6 +45,8 @@ class StrategistAgent(BaseAgent):
         self, db: Database, config: Optional[Any] = None
     ) -> None:
         super().__init__(db=db, config=config)
+        self._browser_manager: Optional[BrowserManager] = None
+        self._owns_browser = False
 
     async def run(self, **kwargs: Any) -> dict:
         """Create scraping strategies for bank websites.
@@ -69,39 +72,49 @@ class StrategistAgent(BaseAgent):
         strategies_updated = 0
         errors = 0
 
-        for bank in banks:
-            if bank.get("website_status") not in _VALID_WEBSITE_STATUSES:
-                continue
+        if self._browser_manager is None:
+            self._browser_manager = BrowserManager(max_contexts=1)
+            self._owns_browser = True
 
-            has_existing = bank["id"] in active_bank_ids
-            if has_existing and not force:
-                continue
+        try:
+            for bank in banks:
+                if bank.get("website_status") not in _VALID_WEBSITE_STATUSES:
+                    continue
 
-            try:
-                analysis = await self._analyze_bank(bank)
-            except Exception:
-                self.logger.exception(
-                    "Failed to analyze bank %s", bank.get("bank_code")
-                )
-                errors += 1
-                continue
+                has_existing = bank["id"] in active_bank_ids
+                if has_existing and not force:
+                    continue
 
-            strategy_data = {
-                "bank_id": bank["id"],
-                "bypass_method": analysis["bypass_method"],
-                "anti_bot_detected": analysis["anti_bot_detected"],
-                "anti_bot_type": analysis["anti_bot_type"],
-                "loan_page_urls": analysis["loan_page_urls"],
-                "selectors": analysis["selectors"],
-                "rate_limit_ms": analysis["rate_limit_ms"],
-            }
+                try:
+                    analysis = await self._analyze_bank(bank)
+                except Exception:
+                    self.logger.exception(
+                        "Failed to analyze bank %s", bank.get("bank_code")
+                    )
+                    errors += 1
+                    continue
 
-            await self.db.upsert_strategy(**strategy_data)
+                strategy_data = {
+                    "bank_id": bank["id"],
+                    "bypass_method": analysis["bypass_method"],
+                    "anti_bot_detected": analysis["anti_bot_detected"],
+                    "anti_bot_type": analysis["anti_bot_type"],
+                    "loan_page_urls": analysis["loan_page_urls"],
+                    "selectors": analysis["selectors"],
+                    "rate_limit_ms": analysis["rate_limit_ms"],
+                }
 
-            if has_existing:
-                strategies_updated += 1
-            else:
-                strategies_created += 1
+                await self.db.upsert_strategy(**strategy_data)
+
+                if has_existing:
+                    strategies_updated += 1
+                else:
+                    strategies_created += 1
+        finally:
+            if self._owns_browser and self._browser_manager is not None:
+                await self._browser_manager.stop()
+                self._browser_manager = None
+                self._owns_browser = False
 
         return {
             "strategies_created": strategies_created,
@@ -116,12 +129,12 @@ class StrategistAgent(BaseAgent):
         anti-bot measures, determines bypass method, and discovers
         loan-related URLs.
         """
-        from ceres.browser.manager import BrowserManager, BrowserType
+        if self._browser_manager is None:
+            raise RuntimeError("BrowserManager not initialized")
 
-        browser_manager = BrowserManager()
-        browser = None
+        context = None
         try:
-            browser, page = await browser_manager.create_context(
+            context, page = await self._browser_manager.create_context(
                 browser_type=BrowserType.PLAYWRIGHT
             )
 
@@ -146,9 +159,9 @@ class StrategistAgent(BaseAgent):
                 "rate_limit_ms": _DEFAULT_RATE_LIMIT_MS,
             }
         finally:
-            if browser is not None:
-                await browser_manager.close_context(
-                    browser, BrowserType.PLAYWRIGHT
+            if context is not None:
+                await self._browser_manager.close_context(
+                    context, BrowserType.PLAYWRIGHT
                 )
 
     def _determine_bypass_method(

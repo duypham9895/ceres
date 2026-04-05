@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CERES Overview — Full Mockup</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0d0d14; color:#e0e0e0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+
+  /* Health Status Bar */
+  .health-bar {
+    background:linear-gradient(90deg, #111118, #13131e, #111118);
+    border-bottom:1px solid #2a2a3a;
+    padding:8px 24px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-size:12px;
+  }
+  .health-bar .status-group { display:flex; gap:16px; align-items:center; }
+  .health-bar .dot { width:6px; height:6px; border-radius:50%; display:inline-block; margin-right:4px; }
+  .health-bar .dot.green { background:#4ade80; }
+  .health-bar .dot.yellow { background:#fbbf24; }
+  .health-bar .dot.red { background:#f87171; }
+  .health-bar .pipeline { color:#60a5fa; }
+  .health-bar .success { color:#fbbf24; }
+
+  /* Main Content */
+  .main { padding:20px 24px; max-width:1400px; margin:0 auto; }
+  .page-title { font-size:20px; font-weight:700; color:#fff; margin-bottom:16px; }
+
+  /* KPI Row */
+  .kpi-row { display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; margin-bottom:20px; }
+  .kpi-card {
+    background:#16161e;
+    border:1px solid #2a2a3a;
+    border-radius:8px;
+    padding:16px;
+  }
+  .kpi-label { font-size:10px; color:#888; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
+  .kpi-value { font-size:28px; font-weight:700; color:#fff; }
+  .kpi-delta { font-size:11px; margin-top:4px; }
+  .kpi-delta.up { color:#4ade80; }
+  .kpi-delta.down { color:#f87171; }
+  .kpi-delta.neutral { color:#888; }
+  .kpi-sparkline {
+    margin-top:8px;
+    height:24px;
+    display:flex;
+    align-items:end;
+    gap:2px;
+  }
+  .kpi-sparkline .bar {
+    flex:1;
+    border-radius:1px 1px 0 0;
+    min-height:2px;
+  }
+
+  /* Two Column Layout */
+  .content-grid { display:grid; grid-template-columns:2.2fr 1fr; gap:16px; }
+
+  /* Rate Intelligence Table */
+  .rate-panel {
+    background:#16161e;
+    border:1px solid #2a2a3a;
+    border-radius:8px;
+    overflow:hidden;
+  }
+  .panel-header {
+    padding:12px 16px;
+    border-bottom:1px solid #2a2a3a;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .panel-title { font-size:13px; font-weight:600; color:#ccc; }
+  .panel-tabs { display:flex; gap:4px; }
+  .panel-tab {
+    font-size:10px;
+    padding:4px 10px;
+    border-radius:4px;
+    cursor:pointer;
+    color:#888;
+    border:1px solid transparent;
+  }
+  .panel-tab.active { background:#2a2a4a; color:#a78bfa; border-color:#3a3a5a; }
+  .rate-table { width:100%; }
+  .rate-table th {
+    font-size:10px;
+    color:#666;
+    text-transform:uppercase;
+    text-align:left;
+    padding:8px 12px;
+    border-bottom:1px solid #1a1a2a;
+    font-weight:500;
+  }
+  .rate-table td {
+    font-size:12px;
+    padding:8px 12px;
+    border-bottom:1px solid #1a1a2a;
+  }
+  .rate-table tr:hover { background:#1a1a28; }
+  .rate-good { color:#4ade80; }
+  .rate-mid { color:#fbbf24; }
+  .rate-high { color:#f87171; }
+  .confidence-dots { display:flex; gap:2px; }
+  .confidence-dots .dot-filled { width:6px; height:6px; border-radius:50%; background:#4ade80; }
+  .confidence-dots .dot-empty { width:6px; height:6px; border-radius:50%; background:#333; }
+  .trend-chip {
+    font-size:10px;
+    padding:2px 6px;
+    border-radius:3px;
+    display:inline-block;
+  }
+  .trend-chip.down { background:#1a2a1a; color:#4ade80; }
+  .trend-chip.up { background:#2a1a1a; color:#f87171; }
+  .trend-chip.flat { background:#1e1e2e; color:#888; }
+  .bank-name { display:flex; align-items:center; gap:6px; }
+  .bank-status { width:6px; height:6px; border-radius:50%; }
+  .completeness-bar {
+    height:4px;
+    border-radius:2px;
+    background:#1a1a2a;
+    width:60px;
+    overflow:hidden;
+  }
+  .completeness-fill { height:100%; border-radius:2px; }
+
+  /* Right Column */
+  .right-col { display:flex; flex-direction:column; gap:12px; }
+
+  /* Needs Attention */
+  .attention-panel {
+    background:#1a1118;
+    border:1px solid #3a2030;
+    border-radius:8px;
+    overflow:hidden;
+  }
+  .attention-header {
+    padding:10px 14px;
+    border-bottom:1px solid #3a2030;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .attention-title { font-size:12px; font-weight:600; color:#f87171; }
+  .attention-badge {
+    font-size:10px;
+    background:#f87171;
+    color:#fff;
+    padding:1px 6px;
+    border-radius:8px;
+    font-weight:600;
+  }
+  .attention-item {
+    padding:8px 14px;
+    border-bottom:1px solid #2a1520;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:11px;
+  }
+  .attention-item:last-child { border-bottom:none; }
+  .attention-icon { font-size:12px; flex-shrink:0; }
+  .attention-category { font-size:9px; color:#888; text-transform:uppercase; }
+
+  /* Today's Changes */
+  .changes-panel {
+    background:#16161e;
+    border:1px solid #2a2a3a;
+    border-radius:8px;
+    overflow:hidden;
+  }
+  .changes-header {
+    padding:10px 14px;
+    border-bottom:1px solid #2a2a3a;
+  }
+  .changes-title { font-size:12px; font-weight:600; color:#aaa; }
+  .change-item {
+    padding:6px 14px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:11px;
+    color:#ccc;
+  }
+  .change-badge {
+    font-size:9px;
+    padding:1px 6px;
+    border-radius:3px;
+    font-weight:500;
+  }
+  .change-badge.new { background:#1a2a1a; color:#4ade80; }
+  .change-badge.rate { background:#1a1a3a; color:#60a5fa; }
+  .change-badge.alert { background:#2a1a1a; color:#f87171; }
+
+  /* Data Quality Summary */
+  .quality-panel {
+    background:#16161e;
+    border:1px solid #2a2a3a;
+    border-radius:8px;
+    padding:14px;
+  }
+  .quality-title { font-size:12px; font-weight:600; color:#aaa; margin-bottom:10px; }
+  .quality-row {
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-size:11px;
+    padding:4px 0;
+  }
+  .quality-label { color:#888; }
+  .quality-value { color:#ccc; font-weight:500; }
+  .quality-bar {
+    flex:1;
+    height:4px;
+    background:#1a1a2a;
+    border-radius:2px;
+    margin:0 10px;
+    overflow:hidden;
+  }
+  .quality-fill { height:100%; border-radius:2px; }
+</style>
+</head>
+<body>
+
+<!-- HEALTH STATUS BAR -->
+<div class="health-bar">
+  <div class="status-group">
+    <span><span class="dot green"></span>40 active</span>
+    <span><span class="dot yellow"></span>13 unreachable</span>
+    <span><span class="dot red"></span>5 blocked</span>
+  </div>
+  <div class="pipeline">▶ Crawler — 34/58 banks processed</div>
+  <div class="success">Success Rate: 64% (7d) ↓8%</div>
+</div>
+
+<!-- MAIN CONTENT -->
+<div class="main">
+  <div class="page-title">Overview</div>
+
+  <!-- KPI ROW -->
+  <div class="kpi-row">
+    <div class="kpi-card">
+      <div class="kpi-label">Banks Monitored</div>
+      <div class="kpi-value">58</div>
+      <div class="kpi-delta up">+3 this week</div>
+      <div class="kpi-sparkline">
+        <div class="bar" style="height:40%; background:#2a3a2a;"></div>
+        <div class="bar" style="height:50%; background:#2a3a2a;"></div>
+        <div class="bar" style="height:45%; background:#2a3a2a;"></div>
+        <div class="bar" style="height:60%; background:#2a3a2a;"></div>
+        <div class="bar" style="height:55%; background:#2a3a2a;"></div>
+        <div class="bar" style="height:70%; background:#2a3a2a;"></div>
+        <div class="bar" style="height:80%; background:#4ade80;"></div>
+      </div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Loan Programs</div>
+      <div class="kpi-value">288</div>
+      <div class="kpi-delta up">+12 new programs</div>
+      <div class="kpi-sparkline">
+        <div class="bar" style="height:50%; background:#2a2a3a;"></div>
+        <div class="bar" style="height:55%; background:#2a2a3a;"></div>
+        <div class="bar" style="height:60%; background:#2a2a3a;"></div>
+        <div class="bar" style="height:58%; background:#2a2a3a;"></div>
+        <div class="bar" style="height:65%; background:#2a2a3a;"></div>
+        <div class="bar" style="height:72%; background:#2a2a3a;"></div>
+        <div class="bar" style="height:85%; background:#60a5fa;"></div>
+      </div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Avg KPR Rate</div>
+      <div class="kpi-value">7.2%</div>
+      <div class="kpi-delta up">↓ 0.3% from last week</div>
+      <div class="kpi-sparkline">
+        <div class="bar" style="height:80%; background:#3a2a2a;"></div>
+        <div class="bar" style="height:75%; background:#3a2a2a;"></div>
+        <div class="bar" style="height:70%; background:#3a2a2a;"></div>
+        <div class="bar" style="height:68%; background:#3a2a2a;"></div>
+        <div class="bar" style="height:65%; background:#3a2a2a;"></div>
+        <div class="bar" style="height:60%; background:#3a2a2a;"></div>
+        <div class="bar" style="height:55%; background:#4ade80;"></div>
+      </div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Data Quality</div>
+      <div class="kpi-value">72%</div>
+      <div class="kpi-delta neutral">avg completeness score</div>
+      <div class="kpi-sparkline">
+        <div class="bar" style="height:60%; background:#1a2a3a;"></div>
+        <div class="bar" style="height:62%; background:#1a2a3a;"></div>
+        <div class="bar" style="height:65%; background:#1a2a3a;"></div>
+        <div class="bar" style="height:64%; background:#1a2a3a;"></div>
+        <div class="bar" style="height:68%; background:#1a2a3a;"></div>
+        <div class="bar" style="height:70%; background:#1a2a3a;"></div>
+        <div class="bar" style="height:72%; background:#60a5fa;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TWO COLUMN: Rate Intelligence + Right Sidebar -->
+  <div class="content-grid">
+
+    <!-- RATE INTELLIGENCE TABLE -->
+    <div class="rate-panel">
+      <div class="panel-header">
+        <div class="panel-title">Rate Intelligence</div>
+        <div class="panel-tabs">
+          <div class="panel-tab active">KPR</div>
+          <div class="panel-tab">KPA</div>
+          <div class="panel-tab">Multiguna</div>
+          <div class="panel-tab">Kendaraan</div>
+          <div class="panel-tab">All Types</div>
+        </div>
+      </div>
+      <table class="rate-table">
+        <thead>
+          <tr>
+            <th>Bank</th>
+            <th>Min Rate</th>
+            <th>Max Rate</th>
+            <th>7d Trend</th>
+            <th>Completeness</th>
+            <th>Confidence</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><div class="bank-name"><span class="bank-status" style="background:#4ade80;"></span>BCA Syariah</div></td>
+            <td class="rate-good">3.50%</td>
+            <td>8.25%</td>
+            <td><span class="trend-chip down">↓ 0.2%</span></td>
+            <td>
+              <div class="completeness-bar"><div class="completeness-fill" style="width:90%; background:#4ade80;"></div></div>
+            </td>
+            <td>
+              <div class="confidence-dots">
+                <span class="dot-filled"></span><span class="dot-filled"></span><span class="dot-filled"></span><span class="dot-filled"></span><span class="dot-empty"></span>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><div class="bank-name"><span class="bank-status" style="background:#4ade80;"></span>Bank Mandiri</div></td>
+            <td class="rate-good">4.80%</td>
+            <td>11.50%</td>
+            <td><span class="trend-chip flat">→ 0%</span></td>
+            <td>
+              <div class="completeness-bar"><div class="completeness-fill" style="width:100%; background:#4ade80;"></div></div>
+            </td>
+            <td>
+              <div class="confidence-dots">
+                <span class="dot-filled"></span><span class="dot-filled"></span><span class="dot-filled"></span><span class="dot-filled"></span><span class="dot-filled"></span>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><div class="bank-name"><span class="bank-status" style="background:#4ade80;"></span>Bank BRI</div></td>
+            <td class="rate-mid">6.25%</td>
+            <td>12.00%</td>
+            <td><span class="trend-chip up">↑ 0.5%</span></td>
+            <td>
+              <div class="completeness-bar"><div class="completeness-fill" style="width:70%; background:#fbbf24;"></div></div>
+            </td>
+            <td>
+              <div class="confidence-dots">
+                <span class="dot-filled"></span><span class="dot-filled"></span><span class="dot-filled"></span><span class="dot-empty"></span><span class="dot-empty"></span>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><div class="bank-name"><span class="bank-status" style="background:#4ade80;"></span>Bank BTN</div></td>
+            <td class="rate-good">5.10%</td>
+            <td>9.75%</td>
+            <td><span class="trend-chip down">↓ 0.1%</span></td>
+            <td>
+              <div class="completeness-bar"><div class="completeness-fill" style="width:85%; background:#4ade80;"></div></div>
+            </td>
+            <td>
+              <div class="confidence-dots">
+                <span class="dot-filled"></span><span class="dot-filled"></span><span class="dot-filled"></span><span class="dot-filled"></span><span class="dot-empty"></span>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><div class="bank-name"><span class="bank-status" style="background:#fbbf24;"></span>Bank Bengkulu</div></td>
+            <td class="rate-high">8.50%</td>
+            <td>14.00%</td>
+            <td><span class="trend-chip up">↑ 1.2%</span></td>
+            <td>
+              <div class="completeness-bar"><div class="completeness-fill" style="width:35%; background:#f87171;"></div></div>
+            </td>
+            <td>
+              <div class="confidence-dots">
+                <span class="dot-filled"></span><span class="dot-empty"></span><span class="dot-empty"></span><span class="dot-empty"></span><span class="dot-empty"></span>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><div class="bank-name"><span class="bank-status" style="background:#4ade80;"></span>Bank Jateng</div></td>
+            <td class="rate-mid">6.00%</td>
+            <td>10.50%</td>
+            <td><span class="trend-chip flat">→ 0%</span></td>
+            <td>
+              <div class="completeness-bar"><div class="completeness-fill" style="width:60%; background:#fbbf24;"></div></div>
+            </td>
+            <td>
+              <div class="confidence-dots">
+                <span class="dot-filled"></span><span class="dot-filled"></span><span class="dot-empty"></span><span class="dot-empty"></span><span class="dot-empty"></span>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><div class="bank-name"><span class="bank-status" style="background:#f87171;"></span>Bank Kalbar</div></td>
+            <td style="color:#666;">—</td>
+            <td style="color:#666;">—</td>
+            <td style="color:#666; font-size:10px;">blocked</td>
+            <td>
+              <div class="completeness-bar"><div class="completeness-fill" style="width:0%;"></div></div>
+            </td>
+            <td>
+              <div class="confidence-dots">
+                <span class="dot-empty"></span><span class="dot-empty"></span><span class="dot-empty"></span><span class="dot-empty"></span><span class="dot-empty"></span>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><div class="bank-name"><span class="bank-status" style="background:#4ade80;"></span>Bank Negara Indonesia</div></td>
+            <td class="rate-good">4.25%</td>
+            <td>10.00%</td>
+            <td><span class="trend-chip down">↓ 0.3%</span></td>
+            <td>
+              <div class="completeness-bar"><div class="completeness-fill" style="width:80%; background:#4ade80;"></div></div>
+            </td>
+            <td>
+              <div class="confidence-dots">
+                <span class="dot-filled"></span><span class="dot-filled"></span><span class="dot-filled"></span><span class="dot-filled"></span><span class="dot-empty"></span>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="right-col">
+
+      <!-- NEEDS ATTENTION -->
+      <div class="attention-panel">
+        <div class="attention-header">
+          <div class="attention-title">Needs Attention</div>
+          <div class="attention-badge">11</div>
+        </div>
+        <div class="attention-item">
+          <span class="attention-icon">🔴</span>
+          <div>
+            <div>5 banks unreachable for 24h+</div>
+            <div class="attention-category">Crawl Failure</div>
+          </div>
+        </div>
+        <div class="attention-item">
+          <span class="attention-icon">🛡️</span>
+          <div>
+            <div>3 banks anti-bot blocked</div>
+            <div class="attention-category">Crawl Failure</div>
+          </div>
+        </div>
+        <div class="attention-item">
+          <span class="attention-icon">📉</span>
+          <div>
+            <div>BRI KPR rate spiked +0.5% in 24h</div>
+            <div class="attention-category">Rate Anomaly</div>
+          </div>
+        </div>
+        <div class="attention-item">
+          <span class="attention-icon">⚠️</span>
+          <div>
+            <div>8 programs below 50% completeness</div>
+            <div class="attention-category">Data Quality</div>
+          </div>
+        </div>
+        <div class="attention-item">
+          <span class="attention-icon">🕐</span>
+          <div>
+            <div>Bank Kalteng not crawled in 3 days</div>
+            <div class="attention-category">Stale Data</div>
+          </div>
+        </div>
+        <div class="attention-item">
+          <span class="attention-icon">⚙️</span>
+          <div>
+            <div>2 strategies below 30% success rate</div>
+            <div class="attention-category">Strategy Health</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TODAY'S CHANGES -->
+      <div class="changes-panel">
+        <div class="changes-header">
+          <div class="changes-title">Today's Changes</div>
+        </div>
+        <div class="change-item">
+          <span class="change-badge new">NEW</span>
+          12 new loan programs discovered
+        </div>
+        <div class="change-item">
+          <span class="change-badge rate">RATE</span>
+          3 banks decreased KPR rates
+        </div>
+        <div class="change-item">
+          <span class="change-badge rate">RATE</span>
+          1 bank increased KPR rate
+        </div>
+        <div class="change-item">
+          <span class="change-badge new">NEW</span>
+          2 banks came back online
+        </div>
+        <div class="change-item">
+          <span class="change-badge alert">ALERT</span>
+          Bank Bengkulu went unreachable
+        </div>
+      </div>
+
+      <!-- DATA QUALITY SUMMARY -->
+      <div class="quality-panel">
+        <div class="quality-title">Data Quality Summary</div>
+        <div class="quality-row">
+          <span class="quality-label">High (>80%)</span>
+          <div class="quality-bar"><div class="quality-fill" style="width:55%; background:#4ade80;"></div></div>
+          <span class="quality-value">32 banks</span>
+        </div>
+        <div class="quality-row">
+          <span class="quality-label">Medium (50-80%)</span>
+          <div class="quality-bar"><div class="quality-fill" style="width:30%; background:#fbbf24;"></div></div>
+          <span class="quality-value">18 banks</span>
+        </div>
+        <div class="quality-row">
+          <span class="quality-label">Low (<50%)</span>
+          <div class="quality-bar"><div class="quality-fill" style="width:14%; background:#f87171;"></div></div>
+          <span class="quality-value">8 banks</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

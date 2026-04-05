@@ -52,9 +52,18 @@ poetry run ceres status --bank BCA
 ### Testing
 
 ```bash
+poetry run ceres verify
+poetry run ceres verify --docker
+poetry run ceres verify-release
+poetry run ceres verify-release --bank BCA
 poetry run pytest tests/ -v
 poetry run pytest tests/ --cov=ceres --cov-report=term-missing
 ```
+
+Canonical scenario matrix:
+- `docs/full-test-scenarios.md`
+- Code manifest and API smoke implementation:
+  - `src/ceres/verification.py`
 
 ## Architecture
 

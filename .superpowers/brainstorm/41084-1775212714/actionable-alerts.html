@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Needs Attention — Actionable Alerts</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0d0d14; color:#e0e0e0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; padding:24px; }
+
+  h2 { color:#fff; font-size:18px; margin-bottom:6px; }
+  .subtitle { color:#888; font-size:13px; margin-bottom:24px; }
+
+  .compare { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:32px; }
+  .compare-label { font-size:11px; color:#f87171; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px; font-weight:600; }
+  .compare-label.good { color:#4ade80; }
+
+  /* Panel styles */
+  .attention-panel {
+    background:#1a1118;
+    border:1px solid #3a2030;
+    border-radius:8px;
+    overflow:hidden;
+  }
+  .attention-header {
+    padding:10px 14px;
+    border-bottom:1px solid #3a2030;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .attention-title { font-size:12px; font-weight:600; color:#f87171; }
+  .attention-badge {
+    font-size:10px;
+    background:#f87171;
+    color:#fff;
+    padding:1px 6px;
+    border-radius:8px;
+    font-weight:600;
+  }
+
+  /* OLD item */
+  .old-item {
+    padding:8px 14px;
+    border-bottom:1px solid #2a1520;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:11px;
+  }
+  .old-item:last-child { border-bottom:none; }
+  .old-category { font-size:9px; color:#666; text-transform:uppercase; }
+
+  /* NEW item with CTA */
+  .alert-item {
+    padding:10px 14px;
+    border-bottom:1px solid #2a1520;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-size:11px;
+  }
+  .alert-item:last-child { border-bottom:none; }
+  .alert-item:hover { background:rgba(255,255,255,0.02); }
+  .alert-icon { font-size:14px; flex-shrink:0; }
+  .alert-body { flex:1; }
+  .alert-message { color:#ddd; line-height:1.4; }
+  .alert-category { font-size:9px; color:#666; text-transform:uppercase; margin-top:2px; }
+  .alert-cta {
+    flex-shrink:0;
+    font-size:10px;
+    padding:4px 10px;
+    border-radius:4px;
+    cursor:pointer;
+    font-weight:600;
+    border:none;
+    white-space:nowrap;
+  }
+  .cta-recrawl { background:#2a1a3a; color:#a78bfa; border:1px solid #3a2a5a; }
+  .cta-recrawl:hover { background:#3a2a5a; }
+  .cta-retry { background:#1a2a3a; color:#60a5fa; border:1px solid #2a3a5a; }
+  .cta-retry:hover { background:#2a3a5a; }
+  .cta-review { background:#2a2a1a; color:#fbbf24; border:1px solid #3a3a2a; }
+  .cta-review:hover { background:#3a3a2a; }
+  .cta-investigate { background:#2a1a1a; color:#f87171; border:1px solid #3a2a2a; }
+  .cta-investigate:hover { background:#3a2a2a; }
+
+  /* Principle box */
+  .principle {
+    background:#1a1a2a;
+    border:1px solid #2a2a4a;
+    border-radius:8px;
+    padding:16px;
+    margin-top:24px;
+  }
+  .principle h3 { color:#a78bfa; font-size:13px; margin-bottom:8px; }
+  .principle p { color:#999; font-size:12px; line-height:1.6; }
+  .principle table { width:100%; margin-top:10px; border-collapse:collapse; }
+  .principle th { text-align:left; font-size:10px; color:#666; padding:6px 8px; border-bottom:1px solid #2a2a3a; }
+  .principle td { font-size:11px; color:#ccc; padding:6px 8px; border-bottom:1px solid #1a1a2a; }
+  .principle td:last-child { color:#a78bfa; }
+</style>
+</head>
+<body>
+
+<h2>Needs Attention — Before vs After</h2>
+<p class="subtitle">Every alert must have an action. No alert without a solution = deleted.</p>
+
+<div class="compare">
+  <!-- BEFORE -->
+  <div>
+    <div class="compare-label">Before — Useless (just shows problems)</div>
+    <div class="attention-panel" style="opacity:0.6;">
+      <div class="attention-header">
+        <div class="attention-title">Needs Attention</div>
+        <div class="attention-badge">11</div>
+      </div>
+      <div class="old-item">
+        <span>🔴</span>
+        <div>
+          <div>5 banks unreachable for 24h+</div>
+          <div class="old-category">Crawl Failure</div>
+        </div>
+      </div>
+      <div class="old-item">
+        <span>🛡️</span>
+        <div>
+          <div>3 banks anti-bot blocked</div>
+          <div class="old-category">Crawl Failure</div>
+        </div>
+      </div>
+      <div class="old-item">
+        <span>📉</span>
+        <div>
+          <div>BRI KPR rate spiked +0.5%</div>
+          <div class="old-category">Rate Anomaly</div>
+        </div>
+      </div>
+      <div class="old-item">
+        <span>⚠️</span>
+        <div>
+          <div>8 programs below 50% completeness</div>
+          <div class="old-category">Data Quality</div>
+        </div>
+      </div>
+      <div class="old-item" style="border-bottom:none;">
+        <span>🕐</span>
+        <div>
+          <div>Bank Kalteng not crawled in 3 days</div>
+          <div class="old-category">Stale Data</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AFTER -->
+  <div>
+    <div class="compare-label good">After — Every alert has an action</div>
+    <div class="attention-panel">
+      <div class="attention-header">
+        <div class="attention-title">Needs Attention</div>
+        <div class="attention-badge">11</div>
+      </div>
+      <div class="alert-item">
+        <span class="alert-icon">🔴</span>
+        <div class="alert-body">
+          <div class="alert-message">5 banks unreachable for 24h+</div>
+          <div class="alert-category">Crawl Failure</div>
+        </div>
+        <button class="alert-cta cta-recrawl">Re-crawl All</button>
+      </div>
+      <div class="alert-item">
+        <span class="alert-icon">🛡️</span>
+        <div class="alert-body">
+          <div class="alert-message">3 banks anti-bot blocked</div>
+          <div class="alert-category">Crawl Failure</div>
+        </div>
+        <button class="alert-cta cta-retry">Retry with Proxy</button>
+      </div>
+      <div class="alert-item">
+        <span class="alert-icon">📉</span>
+        <div class="alert-body">
+          <div class="alert-message">BRI KPR rate spiked +0.5%</div>
+          <div class="alert-category">Rate Anomaly</div>
+        </div>
+        <button class="alert-cta cta-review">Verify Rate</button>
+      </div>
+      <div class="alert-item">
+        <span class="alert-icon">⚠️</span>
+        <div class="alert-body">
+          <div class="alert-message">8 programs below 50% completeness</div>
+          <div class="alert-category">Data Quality</div>
+        </div>
+        <button class="alert-cta cta-recrawl">Re-parse</button>
+      </div>
+      <div class="alert-item">
+        <span class="alert-icon">🕐</span>
+        <div class="alert-body">
+          <div class="alert-message">Bank Kalteng not crawled in 3 days</div>
+          <div class="alert-category">Stale Data</div>
+        </div>
+        <button class="alert-cta cta-recrawl">Crawl Now</button>
+      </div>
+      <div class="alert-item" style="border-bottom:none;">
+        <span class="alert-icon">⚙️</span>
+        <div class="alert-body">
+          <div class="alert-message">2 strategies below 30% success</div>
+          <div class="alert-category">Strategy Health</div>
+        </div>
+        <button class="alert-cta cta-investigate">Re-learn</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CTA MAPPING -->
+<div class="principle">
+  <h3>Action Mapping — Every Alert Type → CTA</h3>
+  <p>No alert exists without a resolution path. If we can't offer an action, we don't show the alert.</p>
+  <table>
+    <thead>
+      <tr><th>Alert Category</th><th>Problem</th><th>CTA Action</th><th>API Call</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Crawl Failure</td>
+        <td>Banks unreachable</td>
+        <td><button class="alert-cta cta-recrawl" style="font-size:9px; padding:2px 6px;">Re-crawl All</button></td>
+        <td>POST /api/crawl/{bank_id}</td>
+      </tr>
+      <tr>
+        <td>Crawl Failure</td>
+        <td>Anti-bot blocked</td>
+        <td><button class="alert-cta cta-retry" style="font-size:9px; padding:2px 6px;">Retry with Proxy</button></td>
+        <td>POST /api/crawl/{bank_id}?bypass=proxy</td>
+      </tr>
+      <tr>
+        <td>Rate Anomaly</td>
+        <td>Sudden rate spike/drop</td>
+        <td><button class="alert-cta cta-review" style="font-size:9px; padding:2px 6px;">Verify Rate</button></td>
+        <td>POST /api/crawl/{bank_id} (re-crawl to confirm)</td>
+      </tr>
+      <tr>
+        <td>Data Quality</td>
+        <td>Low completeness</td>
+        <td><button class="alert-cta cta-recrawl" style="font-size:9px; padding:2px 6px;">Re-parse</button></td>
+        <td>POST /api/parse/{bank_id}</td>
+      </tr>
+      <tr>
+        <td>Stale Data</td>
+        <td>Not crawled recently</td>
+        <td><button class="alert-cta cta-recrawl" style="font-size:9px; padding:2px 6px;">Crawl Now</button></td>
+        <td>POST /api/crawl/{bank_id}</td>
+      </tr>
+      <tr>
+        <td>Strategy Health</td>
+        <td>Low success rate</td>
+        <td><button class="alert-cta cta-investigate" style="font-size:9px; padding:2px 6px;">Re-learn</button></td>
+        <td>POST /api/learn/{bank_id}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>

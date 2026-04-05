@@ -1,0 +1,56 @@
+<h2>What hurts most about the current dashboard?</h2>
+<p class="subtitle">Select ALL that bother you — this shapes what we fix first. (Multi-select enabled)</p>
+
+<div class="options" data-multiselect>
+  <div class="option" data-choice="empty-heatmap" onclick="toggleSelect(this)">
+    <div class="letter">1</div>
+    <div class="content">
+      <h3>Rate Heatmap is empty — all dashes</h3>
+      <p>The biggest table on the page shows zero useful data. Banks are listed but all rate columns show "—". This is the centerpiece and it's broken/useless.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="noisy-feed" onclick="toggleSelect(this)">
+    <div class="letter">2</div>
+    <div class="content">
+      <h3>Live Activity is just noise</h3>
+      <p>Dominated by "system ping" events. No filtering, no signal. Takes up ~25% of screen width for near-zero value.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="flat-kpis" onclick="toggleSelect(this)">
+    <div class="letter">3</div>
+    <div class="content">
+      <h3>KPI cards are flat numbers — no trend, no context</h3>
+      <p>"58 banks monitored" — is that good? Going up? Down? The sparkline is tiny and only shows KPR. Success rate ring has no breakdown of WHY it's 64%.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="no-quality" onclick="toggleSelect(this)">
+    <div class="letter">4</div>
+    <div class="content">
+      <h3>No data quality visibility</h3>
+      <p>The DB has completeness_score and data_confidence per loan program, but the dashboard never shows it. You can't tell which banks have good data vs garbage.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="no-errors" onclick="toggleSelect(this)">
+    <div class="letter">5</div>
+    <div class="content">
+      <h3>No error/failure details</h3>
+      <p>Success rate is 64% but you can't see: which banks failed? Why? Anti-bot? Timeout? The errors are in the DB but invisible here.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="layout-cramped" onclick="toggleSelect(this)">
+    <div class="letter">6</div>
+    <div class="content">
+      <h3>Layout is cramped and cluttered</h3>
+      <p>Too many sections fighting for space. The sidebar crawl progress + heatmap + live feed all compete. No clear visual hierarchy or breathing room.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:24px; padding:16px; background:rgba(255,255,255,0.05); border-radius:8px;">
+  <p style="color:#999;">Click all that apply, then tell me in the terminal. If there's something else not listed, mention it!</p>
+</div>

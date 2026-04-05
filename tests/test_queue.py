@@ -193,4 +193,4 @@ def test_worker_settings_has_expected_attributes():
 
     assert run_agent_task in WorkerSettings.functions
     assert WorkerSettings.job_timeout == 600
-    assert WorkerSettings.max_tries == 3
+    assert WorkerSettings.max_tries == 1

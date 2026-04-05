@@ -100,7 +100,8 @@ class CrawlTaskRunner:
         ``QUEUED`` status.  Otherwise the legacy single-concurrency
         in-process path is used (returns ``None`` when blocked).
         """
-        if self._arq_pool is not None:
+        _inprocess_agents = {"daily", "parser"}
+        if self._arq_pool is not None and agent not in _inprocess_agents:
             return await self._enqueue_job(agent, bank_code=bank_code, force=force)
         return await self._start_job_inprocess(agent, bank_code=bank_code, force=force)
 
@@ -110,16 +111,46 @@ class CrawlTaskRunner:
         bank_code: Optional[str] = None,
         force: bool = False,
     ) -> CrawlJob:
-        """Enqueue a job to arq. No concurrency gate."""
+        """Enqueue a job to arq with dedup by agent:bank_code."""
         job_id = str(uuid.uuid4())
+        dedup_id = f"{agent}:{bank_code or 'all'}"
         await self._arq_pool.enqueue_job(
             "run_agent_task",
+            _job_id=dedup_id,
             job_id=job_id,
             agent_name=agent,
             bank_code=bank_code,
             force=force,
         )
         return CrawlJob(job_id=job_id, agent=agent, status=CrawlJobStatus.QUEUED)
+
+    async def enqueue_batch(
+        self,
+        agent: str,
+        bank_codes: list[str],
+        force: bool = False,
+    ) -> list[Optional[CrawlJob]]:
+        """Enqueue jobs for multiple banks concurrently."""
+        if self._arq_pool is not None:
+            results = await asyncio.gather(
+                *(
+                    self._enqueue_job(agent, bank_code=code, force=force)
+                    for code in bank_codes
+                ),
+                return_exceptions=True,
+            )
+            return [
+                r if not isinstance(r, BaseException) else None
+                for r in results
+            ]
+
+        # In-process fallback: run single agent for all banks at once
+        if not bank_codes:
+            return []
+        job = await self._start_job_inprocess(
+            agent, bank_code=None, force=force,
+        )
+        return [job] + [None] * (len(bank_codes) - 1)
 
     async def _start_job_inprocess(
         self,
@@ -344,18 +375,47 @@ class CrawlTaskRunner:
         return await agent.execute(**kwargs)
 
     async def _run_crawler(self, **kwargs: Any) -> dict:
-        """Crawl pages then immediately parse them with the LLM extractor."""
-        from ceres.agents.crawler import CrawlerAgent
+        """Crawl pages then parse them.
 
-        crawl_result = await CrawlerAgent(db=self._db, config=self._config).execute(**kwargs)
+        When arq is available, dispatches the crawler to the worker
+        container (which has Playwright) and waits for it. This keeps the
+        API container free of browser processes. Falls back to in-process
+        execution when arq is not configured.
+        """
+        bank_code = kwargs.get("bank_code")
 
+        if self._arq_pool is not None:
+            job_id = str(uuid.uuid4())
+            dedup_id = f"crawler:{bank_code or 'all'}:{job_id}"
+            job = await self._arq_pool.enqueue_job(
+                "run_agent_task",
+                _job_id=dedup_id,
+                job_id=job_id,
+                agent_name="crawler",
+                bank_code=bank_code,
+            )
+            if job is None:
+                logger.warning("Crawler job dedup collision, running in-process")
+                from ceres.agents.crawler import CrawlerAgent
+
+                crawl_result = await CrawlerAgent(
+                    db=self._db, config=self._config,
+                ).execute(**kwargs)
+            else:
+                crawl_result = await job.result(timeout=600) or {}
+        else:
+            from ceres.agents.crawler import CrawlerAgent
+
+            crawl_result = await CrawlerAgent(
+                db=self._db, config=self._config,
+            ).execute(**kwargs)
+
+        programs_parsed = 0
         if crawl_result.get("pages_fetched", 0) > 0:
             parse_result = await self._run_parser(**kwargs)
-            crawl_result["programs_parsed"] = parse_result.get("programs_parsed", 0)
-        else:
-            crawl_result["programs_parsed"] = 0
+            programs_parsed = parse_result.get("programs_parsed", 0)
 
-        return crawl_result
+        return {**crawl_result, "programs_parsed": programs_parsed}
 
     async def _run_parser(self, **kwargs: Any) -> dict:
         from ceres.agents.parser import ParserAgent

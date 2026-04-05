@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CERES — Full App Redesign Audit</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0d0d14; color:#e0e0e0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; padding:32px 24px; max-width:1200px; margin:0 auto; }
+
+  h1 { color:#fff; font-size:22px; margin-bottom:4px; }
+  .tagline { color:#888; font-size:13px; margin-bottom:32px; }
+
+  .page-audit {
+    background:#16161e;
+    border:1px solid #2a2a3a;
+    border-radius:10px;
+    margin-bottom:16px;
+    overflow:hidden;
+  }
+  .page-header {
+    padding:14px 18px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    border-bottom:1px solid #2a2a3a;
+  }
+  .page-name { font-size:15px; font-weight:700; color:#fff; }
+  .page-score {
+    font-size:11px;
+    padding:3px 10px;
+    border-radius:12px;
+    font-weight:600;
+  }
+  .score-bad { background:#2a1a1a; color:#f87171; border:1px solid #5a2d2d; }
+  .score-mid { background:#2a2a1a; color:#fbbf24; border:1px solid #5a5a2d; }
+  .score-ok { background:#1a2a1a; color:#4ade80; border:1px solid #2d5a3d; }
+
+  .page-body { padding:14px 18px; }
+  .audit-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+  .audit-col h4 { font-size:10px; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; font-weight:600; }
+  .audit-col h4.current { color:#f87171; }
+  .audit-col h4.problem { color:#fbbf24; }
+  .audit-col h4.redesign { color:#4ade80; }
+  .audit-item { font-size:11px; color:#999; padding:3px 0; line-height:1.4; }
+  .audit-item.bad { color:#f87171; }
+  .audit-item.good { color:#4ade80; }
+
+  .nav-redesign {
+    background:#1a1a2a;
+    border:1px solid #2a2a4a;
+    border-radius:10px;
+    padding:18px;
+    margin-bottom:24px;
+  }
+  .nav-title { font-size:13px; color:#a78bfa; font-weight:600; margin-bottom:12px; }
+  .nav-items { display:flex; gap:8px; flex-wrap:wrap; }
+  .nav-item {
+    background:#16161e;
+    border:1px solid #2a2a3a;
+    border-radius:6px;
+    padding:8px 14px;
+    font-size:11px;
+  }
+  .nav-item .label { color:#888; font-size:9px; text-transform:uppercase; }
+  .nav-item .name { color:#fff; font-weight:600; margin-top:2px; }
+  .nav-item .sub { color:#666; font-size:9px; margin-top:2px; }
+  .nav-item.changed { border-color:#4ade80; }
+  .nav-item.new { border-color:#a78bfa; }
+  .nav-item.removed { border-color:#f87171; opacity:0.5; }
+</style>
+</head>
+<body>
+
+<h1>Full App Redesign — Page-by-Page Audit</h1>
+<p class="tagline">6 pages analyzed. Every page gets the same treatment: no useless data, every element earns its space.</p>
+
+<!-- NAV CHANGES -->
+<div class="nav-redesign">
+  <div class="nav-title">Sidebar Navigation — Proposed Changes</div>
+  <div class="nav-items">
+    <div class="nav-item changed">
+      <div class="label">Redesigned</div>
+      <div class="name">Overview</div>
+      <div class="sub">Health + Intelligence</div>
+    </div>
+    <div class="nav-item changed">
+      <div class="label">Redesigned</div>
+      <div class="name">Banks</div>
+      <div class="sub">+ bulk actions, quality scores</div>
+    </div>
+    <div class="nav-item changed">
+      <div class="label">Redesigned</div>
+      <div class="name">Loan Programs</div>
+      <div class="sub">+ comparison view, rate history</div>
+    </div>
+    <div class="nav-item changed">
+      <div class="label">Redesigned</div>
+      <div class="name">Crawl Logs</div>
+      <div class="sub">+ analytics, error breakdown</div>
+    </div>
+    <div class="nav-item changed">
+      <div class="label">Redesigned</div>
+      <div class="name">Strategies</div>
+      <div class="sub">+ version history, better feedback</div>
+    </div>
+    <div class="nav-item changed">
+      <div class="label">Redesigned</div>
+      <div class="name">Recommendations</div>
+      <div class="sub">+ actions, dismiss, evidence</div>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE 1: OVERVIEW (already designed) -->
+<div class="page-audit">
+  <div class="page-header">
+    <div class="page-name">1. Overview</div>
+    <div class="page-score score-bad">Current: 2/10</div>
+  </div>
+  <div class="page-body">
+    <div class="audit-grid">
+      <div class="audit-col">
+        <h4 class="current">Current State</h4>
+        <div class="audit-item">4 flat KPI cards (no trends)</div>
+        <div class="audit-item">Rate heatmap — all dashes</div>
+        <div class="audit-item">Live feed — 90% ping noise</div>
+        <div class="audit-item">Ring chart for success rate</div>
+      </div>
+      <div class="audit-col">
+        <h4 class="problem">Problems</h4>
+        <div class="audit-item bad">No actionable data</div>
+        <div class="audit-item bad">No data quality visibility</div>
+        <div class="audit-item bad">No error breakdown</div>
+        <div class="audit-item bad">Layout cluttered</div>
+      </div>
+      <div class="audit-col">
+        <h4 class="redesign">Redesign ✓ (Approved)</h4>
+        <div class="audit-item good">Health status bar</div>
+        <div class="audit-item good">KPI cards with sparklines + trends</div>
+        <div class="audit-item good">Tabbed Rate Intelligence table</div>
+        <div class="audit-item good">Actionable alerts with CTAs</div>
+        <div class="audit-item good">Today's Changes + Quality Summary</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE 2: BANKS -->
+<div class="page-audit">
+  <div class="page-header">
+    <div class="page-name">2. Banks</div>
+    <div class="page-score score-mid">Current: 5/10</div>
+  </div>
+  <div class="page-body">
+    <div class="audit-grid">
+      <div class="audit-col">
+        <h4 class="current">Current State</h4>
+        <div class="audit-item">Basic filterable table</div>
+        <div class="audit-item">Columns: Code, Name, Category, Status, Last Crawl, Programs, Actions</div>
+        <div class="audit-item">Individual "Crawl" button per bank</div>
+        <div class="audit-item">Click row → Bank Detail</div>
+      </div>
+      <div class="audit-col">
+        <h4 class="problem">Problems</h4>
+        <div class="audit-item bad">No bulk operations</div>
+        <div class="audit-item bad">No column sorting</div>
+        <div class="audit-item bad">No category summary stats</div>
+        <div class="audit-item bad">No crawl health per bank</div>
+        <div class="audit-item bad">No data quality per bank</div>
+      </div>
+      <div class="audit-col">
+        <h4 class="redesign">Redesign Plan</h4>
+        <div class="audit-item good">Summary strip: X active / Y blocked / Z unreachable</div>
+        <div class="audit-item good">Sortable columns</div>
+        <div class="audit-item good">Multi-select + bulk actions (crawl, re-learn)</div>
+        <div class="audit-item good">Crawl health column (streak, success rate)</div>
+        <div class="audit-item good">Data quality column (avg completeness)</div>
+        <div class="audit-item good">Quick filters: "Show failing" / "Show stale"</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE 3: LOAN PROGRAMS -->
+<div class="page-audit">
+  <div class="page-header">
+    <div class="page-name">3. Loan Programs</div>
+    <div class="page-score score-mid">Current: 6/10</div>
+  </div>
+  <div class="page-body">
+    <div class="audit-grid">
+      <div class="audit-col">
+        <h4 class="current">Current State</h4>
+        <div class="audit-item">Sortable table with expandable rows</div>
+        <div class="audit-item">Confidence + completeness bars</div>
+        <div class="audit-item">Raw data JSON viewer</div>
+        <div class="audit-item">Excel export</div>
+        <div class="audit-item">Source URL shown</div>
+      </div>
+      <div class="audit-col">
+        <h4 class="problem">Problems</h4>
+        <div class="audit-item bad">No comparison view (same type across banks)</div>
+        <div class="audit-item bad">No rate change history</div>
+        <div class="audit-item bad">Completeness bar not actionable (what's missing?)</div>
+        <div class="audit-item bad">No distinction between null rates vs 0%</div>
+      </div>
+      <div class="audit-col">
+        <h4 class="redesign">Redesign Plan</h4>
+        <div class="audit-item good">Comparison mode: select type → see all banks side-by-side</div>
+        <div class="audit-item good">Rate history sparkline per program</div>
+        <div class="audit-item good">Completeness tooltip: "Missing: max_amount, tenor"</div>
+        <div class="audit-item good">"Re-parse" CTA on low-quality programs</div>
+        <div class="audit-item good">Better rate display (fixed/floating/promo breakdown)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE 4: CRAWL LOGS -->
+<div class="page-audit">
+  <div class="page-header">
+    <div class="page-name">4. Crawl Logs</div>
+    <div class="page-score score-bad">Current: 3/10</div>
+  </div>
+  <div class="page-body">
+    <div class="audit-grid">
+      <div class="audit-col">
+        <h4 class="current">Current State</h4>
+        <div class="audit-item">Timeline grouped by date</div>
+        <div class="audit-item">Basic log entries</div>
+        <div class="audit-item">Pagination (20/page)</div>
+        <div class="audit-item">Filters available</div>
+      </div>
+      <div class="audit-col">
+        <h4 class="problem">Problems</h4>
+        <div class="audit-item bad">No success/failure/timeout stats</div>
+        <div class="audit-item bad">No error type breakdown</div>
+        <div class="audit-item bad">No duration visualization</div>
+        <div class="audit-item bad">No "which banks failed" drill-down</div>
+        <div class="audit-item bad">No correlation with bank status changes</div>
+      </div>
+      <div class="audit-col">
+        <h4 class="redesign">Redesign Plan</h4>
+        <div class="audit-item good">Stats bar: success/failed/blocked/timeout counts</div>
+        <div class="audit-item good">Error breakdown chart (pie or bar)</div>
+        <div class="audit-item good">Duration histogram</div>
+        <div class="audit-item good">Failed bank list with "Re-crawl" CTAs</div>
+        <div class="audit-item good">Programs found/new per crawl run</div>
+        <div class="audit-item good">Trend: success rate over last 30 days</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE 5: STRATEGIES -->
+<div class="page-audit">
+  <div class="page-header">
+    <div class="page-name">5. Strategies</div>
+    <div class="page-score score-mid">Current: 6/10</div>
+  </div>
+  <div class="page-body">
+    <div class="audit-grid">
+      <div class="audit-col">
+        <h4 class="current">Current State</h4>
+        <div class="audit-item">Table with checkboxes for bulk select</div>
+        <div class="audit-item">Status pills (DEAD/DEGRADED/HEALTHY/STRONG)</div>
+        <div class="audit-item">Expandable rows (bypass, version, success bar)</div>
+        <div class="audit-item">Bulk "Rebuild Selected" action</div>
+        <div class="audit-item">"Select all failing" quick action</div>
+      </div>
+      <div class="audit-col">
+        <h4 class="problem">Problems</h4>
+        <div class="audit-item bad">No version history / rollback</div>
+        <div class="audit-item bad">Rebuild feedback unclear (which failed?)</div>
+        <div class="audit-item bad">No success rate trend over time</div>
+        <div class="audit-item bad">No strategy comparison between banks</div>
+      </div>
+      <div class="audit-col">
+        <h4 class="redesign">Redesign Plan</h4>
+        <div class="audit-item good">Version history timeline per strategy</div>
+        <div class="audit-item good">Rebuild progress with per-bank status</div>
+        <div class="audit-item good">Success rate sparkline (30d trend)</div>
+        <div class="audit-item good">Anti-bot detection alerts + bypass suggestions</div>
+        <div class="audit-item good">Summary strip: X healthy / Y degraded / Z dead</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE 6: RECOMMENDATIONS -->
+<div class="page-audit">
+  <div class="page-header">
+    <div class="page-name">6. Recommendations</div>
+    <div class="page-score score-bad">Current: 3/10</div>
+  </div>
+  <div class="page-body">
+    <div class="audit-grid">
+      <div class="audit-col">
+        <h4 class="current">Current State</h4>
+        <div class="audit-item">Card grid of recommendations</div>
+        <div class="audit-item">Type badge + priority stars</div>
+        <div class="audit-item">Impact score bar</div>
+        <div class="audit-item">"Run Learning" button if empty</div>
+      </div>
+      <div class="audit-col">
+        <h4 class="problem">Problems</h4>
+        <div class="audit-item bad">No pagination (won't scale)</div>
+        <div class="audit-item bad">No filtering by type/priority</div>
+        <div class="audit-item bad">No actions (dismiss, act on, mark reviewed)</div>
+        <div class="audit-item bad">No supporting evidence</div>
+        <div class="audit-item bad">Impact score meaning unclear</div>
+        <div class="audit-item bad">Cards are static — no drill-down</div>
+      </div>
+      <div class="audit-col">
+        <h4 class="redesign">Redesign Plan</h4>
+        <div class="audit-item good">Priority-sorted list with filters</div>
+        <div class="audit-item good">Action buttons: Act / Dismiss / Snooze</div>
+        <div class="audit-item good">Evidence panel: supporting data</div>
+        <div class="audit-item good">Pagination + type/priority filters</div>
+        <div class="audit-item good">Status tracking: New → Reviewed → Done</div>
+        <div class="audit-item good">Impact explained: "Could save X% crawl time"</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

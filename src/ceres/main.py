@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+import subprocess
 from typing import Optional
 
 import click
@@ -12,6 +13,11 @@ from dotenv import load_dotenv
 from ceres.config import CeresConfig, load_config
 from ceres.database import Database
 from ceres.utils.logging import setup_logging
+from ceres.verification import (
+    VERIFICATION_SCENARIOS,
+    assert_schema_compatibility,
+    run_api_smoke,
+)
 
 
 def _get_config() -> CeresConfig:
@@ -23,6 +29,11 @@ def _get_config() -> CeresConfig:
     yaml_path = project_root / "config" / "config.yaml"
     yaml_str = str(yaml_path) if yaml_path.exists() else None
     return load_config(yaml_str)
+
+
+def _project_root() -> Path:
+    """Return the repository root."""
+    return Path(__file__).resolve().parent.parent.parent
 
 
 async def _run_agent(agent_name: str, bank_code: Optional[str] = None, **kwargs) -> None:
@@ -161,6 +172,77 @@ def daily() -> None:
     asyncio.run(_run_daily_pipeline())
 
 
+@cli.command()
+@click.option(
+    "--docker/--no-docker",
+    default=False,
+    help="Include Docker Compose rebuild/start/status smoke checks.",
+)
+def verify(docker: bool) -> None:
+    """Run the standard full verification workflow for CERES."""
+    root = _project_root()
+    dashboard_dir = root / "dashboard"
+
+    checks: list[tuple[str, list[str], Path]] = [
+        ("Backend tests", ["pytest", "-q"], root),
+        ("Frontend tests", ["npx", "vitest", "run"], dashboard_dir),
+        ("Frontend production build", ["npm", "run", "build"], dashboard_dir),
+    ]
+
+    if docker:
+        checks.extend([
+            ("Docker Compose build", ["docker", "compose", "build"], root),
+            ("Docker Compose up", ["docker", "compose", "up", "-d"], root),
+            ("Docker Compose status", ["docker", "compose", "ps"], root),
+        ])
+
+    click.echo("\n--- CERES Verification ---")
+    click.echo("Scenario catalog: docs/full-test-scenarios.md")
+    click.echo(f"Declared scenarios: {len(VERIFICATION_SCENARIOS)}")
+
+    for label, cmd, cwd in checks:
+        click.echo(f"\n>>> {label}")
+        _run_check(cmd, cwd=cwd)
+        click.echo(f"<<< {label} passed")
+
+    if docker:
+        click.echo("\n>>> Feature API smoke")
+        run_api_smoke()
+        click.echo("<<< Feature API smoke passed")
+
+    click.echo("\nAll verification checks passed.")
+
+
+@cli.command(name="verify-release")
+@click.option(
+    "--docker/--no-docker",
+    default=True,
+    help="Include Docker feature verification as part of release verification.",
+)
+@click.option(
+    "--bank",
+    default=None,
+    help="Optional real bank code for live single-bank pipeline smoke.",
+)
+def verify_release(docker: bool, bank: Optional[str]) -> None:
+    """Run stricter release verification including DB schema checks."""
+    click.echo("\n--- CERES Release Verification ---")
+    click.echo("Scenario catalog: docs/full-test-scenarios.md")
+
+    verify.callback(docker=docker)
+
+    click.echo("\n>>> Database schema compatibility")
+    asyncio.run(_verify_schema_compatibility())
+    click.echo("<<< Database schema compatibility passed")
+
+    if bank:
+        click.echo(f"\n>>> Single-bank live smoke ({bank})")
+        _run_single_bank_smoke(bank)
+        click.echo(f"<<< Single-bank live smoke ({bank}) passed")
+
+    click.echo("\nRelease verification checks passed.")
+
+
 # ---------------------------------------------------------------------------
 # Status helper
 # ---------------------------------------------------------------------------
@@ -195,6 +277,50 @@ async def _show_status(bank_code: Optional[str] = None) -> None:
                 click.echo(f"\nBank '{bank_code}' not found.")
     finally:
         await db.disconnect()
+
+
+def _run_check(cmd: list[str], *, cwd: Path) -> None:
+    """Run a subprocess check, streaming output and failing fast on error."""
+    try:
+        subprocess.run(cmd, cwd=cwd, check=True)
+    except FileNotFoundError as exc:
+        raise click.ClickException(
+            f"Required command not found: {cmd[0]}"
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        rendered = " ".join(cmd)
+        raise click.ClickException(
+            f"Verification step failed ({rendered}) with exit code {exc.returncode}"
+        ) from exc
+
+
+async def _verify_schema_compatibility() -> None:
+    """Connect to the configured DB and assert required schema compatibility."""
+    config = _get_config()
+    db = Database(config.database_url)
+    try:
+        await db.connect()
+        await assert_schema_compatibility(db)
+    except RuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
+    finally:
+        await db.disconnect()
+
+
+def _run_single_bank_smoke(bank: str) -> None:
+    """Run a real single-bank strategist/crawler/parser/status smoke flow."""
+    root = _project_root()
+    commands = [
+        ("Strategist smoke", ["poetry", "run", "ceres", "strategist", "--bank", bank, "--force"]),
+        ("Crawler smoke", ["poetry", "run", "ceres", "crawler", "--bank", bank]),
+        ("Parser smoke", ["poetry", "run", "ceres", "parser", "--bank", bank]),
+        ("Status smoke", ["poetry", "run", "ceres", "status", "--bank", bank]),
+    ]
+
+    for label, cmd in commands:
+        click.echo(f"\n>>> {label}")
+        _run_check(cmd, cwd=root)
+        click.echo(f"<<< {label} passed")
 
 
 # ---------------------------------------------------------------------------

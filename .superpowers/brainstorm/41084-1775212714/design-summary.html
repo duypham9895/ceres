@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CERES Overview Redesign — Full Design Summary</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0d0d14; color:#e0e0e0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; padding:32px 24px; max-width:1100px; margin:0 auto; }
+
+  h1 { color:#fff; font-size:22px; margin-bottom:4px; }
+  .tagline { color:#888; font-size:13px; margin-bottom:32px; }
+
+  .section { margin-bottom:28px; }
+  .section-title {
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:1px;
+    color:#a78bfa;
+    font-weight:600;
+    margin-bottom:12px;
+    padding-bottom:6px;
+    border-bottom:1px solid #2a2a3a;
+  }
+
+  .decision-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .decision {
+    background:#16161e;
+    border:1px solid #2a2a3a;
+    border-radius:8px;
+    padding:14px;
+  }
+  .decision .label { font-size:10px; color:#666; text-transform:uppercase; margin-bottom:4px; }
+  .decision .value { font-size:14px; color:#fff; font-weight:600; }
+  .decision .detail { font-size:11px; color:#888; margin-top:4px; line-height:1.5; }
+
+  .zone-list { display:flex; flex-direction:column; gap:8px; }
+  .zone {
+    background:#16161e;
+    border:1px solid #2a2a3a;
+    border-radius:8px;
+    padding:14px;
+    display:flex;
+    gap:14px;
+    align-items:flex-start;
+  }
+  .zone-num {
+    background:#2a2a4a;
+    color:#a78bfa;
+    width:28px;
+    height:28px;
+    border-radius:50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:12px;
+    font-weight:700;
+    flex-shrink:0;
+  }
+  .zone-name { font-size:13px; color:#fff; font-weight:600; }
+  .zone-desc { font-size:11px; color:#888; margin-top:3px; line-height:1.5; }
+  .zone-items { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+  .zone-chip {
+    font-size:9px;
+    padding:2px 8px;
+    border-radius:3px;
+    background:#1a1a2a;
+    color:#ccc;
+    border:1px solid #2a2a3a;
+  }
+
+  .removed-section { margin-top:16px; }
+  .removed {
+    background:#1a1118;
+    border:1px solid #3a2030;
+    border-radius:8px;
+    padding:14px;
+  }
+  .removed-title { font-size:13px; color:#f87171; font-weight:600; margin-bottom:8px; }
+  .removed-item {
+    font-size:11px;
+    color:#ccc;
+    padding:4px 0;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+
+  .new-apis {
+    background:#16161e;
+    border:1px solid #2a2a3a;
+    border-radius:8px;
+    overflow:hidden;
+    margin-top:12px;
+  }
+  .new-apis table { width:100%; border-collapse:collapse; }
+  .new-apis th {
+    text-align:left;
+    font-size:10px;
+    color:#666;
+    padding:8px 12px;
+    border-bottom:1px solid #2a2a3a;
+    background:#12121a;
+  }
+  .new-apis td {
+    font-size:11px;
+    padding:8px 12px;
+    border-bottom:1px solid #1a1a2a;
+    color:#ccc;
+  }
+  .new-apis code {
+    font-size:10px;
+    background:#1a1a2a;
+    padding:2px 6px;
+    border-radius:3px;
+    color:#a78bfa;
+  }
+  .exists { color:#4ade80; font-size:9px; }
+  .new-tag { color:#fbbf24; font-size:9px; }
+
+  .principle-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-top:12px; }
+  .principle {
+    background:#16161e;
+    border:1px solid #2a2a3a;
+    border-radius:8px;
+    padding:14px;
+    text-align:center;
+  }
+  .principle-icon { font-size:24px; margin-bottom:6px; }
+  .principle-name { font-size:12px; color:#fff; font-weight:600; margin-bottom:4px; }
+  .principle-desc { font-size:10px; color:#888; line-height:1.4; }
+</style>
+</head>
+<body>
+
+<h1>CERES Overview Dashboard — Redesign Spec</h1>
+<p class="tagline">Approved design decisions for review before implementation</p>
+
+<!-- DESIGN PRINCIPLES -->
+<div class="section">
+  <div class="section-title">Design Principles</div>
+  <div class="principle-row">
+    <div class="principle">
+      <div class="principle-icon">🎯</div>
+      <div class="principle-name">No Useless Data</div>
+      <div class="principle-desc">Every number, table, and alert must lead to a decision or action. If it can't, delete it.</div>
+    </div>
+    <div class="principle">
+      <div class="principle-icon">👆</div>
+      <div class="principle-name">Every Alert Has a CTA</div>
+      <div class="principle-desc">Problems without solutions are noise. Every alert maps to an API action.</div>
+    </div>
+    <div class="principle">
+      <div class="principle-icon">📊</div>
+      <div class="principle-name">Intelligence First</div>
+      <div class="principle-desc">Rate data and quality metrics get the most real estate. Health is a glanceable bar.</div>
+    </div>
+  </div>
+</div>
+
+<!-- CORE DECISIONS -->
+<div class="section">
+  <div class="section-title">Core Decisions</div>
+  <div class="decision-grid">
+    <div class="decision">
+      <div class="label">Audience</div>
+      <div class="value">Hybrid — Health + Intelligence</div>
+      <div class="detail">Product/business focus with ops health as a glanceable status bar. Rate intelligence gets primary real estate.</div>
+    </div>
+    <div class="decision">
+      <div class="label">Layout</div>
+      <div class="value">Dashboard Zones</div>
+      <div class="detail">Thin health bar → KPI cards → Rate Intelligence table (65%) + Right sidebar (35%)</div>
+    </div>
+    <div class="decision">
+      <div class="label">Data Quality</div>
+      <div class="value">New — First-class metric</div>
+      <div class="detail">completeness_score and data_confidence surfaced in KPI card, table column, and quality summary panel.</div>
+    </div>
+    <div class="decision">
+      <div class="label">Alerts</div>
+      <div class="value">Actionable Only</div>
+      <div class="detail">5 alert categories, each with a CTA button that triggers an API action. No passive alerts.</div>
+    </div>
+  </div>
+</div>
+
+<!-- PAGE ZONES -->
+<div class="section">
+  <div class="section-title">Page Zones (Top → Bottom)</div>
+  <div class="zone-list">
+    <div class="zone">
+      <div class="zone-num">1</div>
+      <div>
+        <div class="zone-name">Health Status Bar</div>
+        <div class="zone-desc">Thin strip at top. Bank status counts (colored dots), live pipeline progress, 7d success rate with trend. Always visible, never dominates.</div>
+        <div class="zone-items">
+          <span class="zone-chip">● 40 active</span>
+          <span class="zone-chip">● 13 unreachable</span>
+          <span class="zone-chip">● 5 blocked</span>
+          <span class="zone-chip">Pipeline: Crawler ▶ 34/58</span>
+          <span class="zone-chip">64% success ↓8%</span>
+        </div>
+      </div>
+    </div>
+    <div class="zone">
+      <div class="zone-num">2</div>
+      <div>
+        <div class="zone-name">KPI Cards (4 across)</div>
+        <div class="zone-desc">Each card: big number + delta + 7-day sparkline. All numbers have context — trends, comparisons, direction.</div>
+        <div class="zone-items">
+          <span class="zone-chip">Banks Monitored (58, +3)</span>
+          <span class="zone-chip">Loan Programs (288, +12 new)</span>
+          <span class="zone-chip">Avg KPR Rate (7.2%, ↓0.3%)</span>
+          <span class="zone-chip">Data Quality (72% avg completeness)</span>
+        </div>
+      </div>
+    </div>
+    <div class="zone">
+      <div class="zone-num">3</div>
+      <div>
+        <div class="zone-name">Rate Intelligence Table (~65% width)</div>
+        <div class="zone-desc">Main content area. Tabbed by loan type. Rich columns: bank + status dot, min/max rate (color-coded), 7d trend chip, completeness bar, confidence dots. Replaces the broken heatmap.</div>
+        <div class="zone-items">
+          <span class="zone-chip">Tabs: KPR | KPA | Multiguna | Kendaraan | All</span>
+          <span class="zone-chip">Color: &lt;6% green, 6-8% yellow, &gt;8% red</span>
+          <span class="zone-chip">Sortable columns</span>
+          <span class="zone-chip">Click row → Bank detail</span>
+        </div>
+      </div>
+    </div>
+    <div class="zone">
+      <div class="zone-num">4</div>
+      <div>
+        <div class="zone-name">Right Sidebar (~35% width)</div>
+        <div class="zone-desc">Three stacked panels: Needs Attention (actionable alerts with CTAs), Today's Changes (meaningful deltas), Data Quality Summary (high/medium/low distribution).</div>
+        <div class="zone-items">
+          <span class="zone-chip">Needs Attention (with CTAs)</span>
+          <span class="zone-chip">Today's Changes</span>
+          <span class="zone-chip">Data Quality Summary</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CTA MAPPING -->
+<div class="section">
+  <div class="section-title">Alert → CTA Mapping</div>
+  <div class="new-apis">
+    <table>
+      <thead>
+        <tr><th>Alert</th><th>CTA Button</th><th>API Endpoint</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Banks unreachable</td>
+          <td>Re-crawl All</td>
+          <td><code>POST /api/crawl/{bank_id}</code></td>
+          <td><span class="exists">EXISTS</span></td>
+        </tr>
+        <tr>
+          <td>Anti-bot blocked</td>
+          <td>Retry with Proxy</td>
+          <td><code>POST /api/crawl/{bank_id}?bypass=proxy</code></td>
+          <td><span class="new-tag">EXTEND</span></td>
+        </tr>
+        <tr>
+          <td>Rate anomaly</td>
+          <td>Verify Rate</td>
+          <td><code>POST /api/crawl/{bank_id}</code></td>
+          <td><span class="exists">EXISTS</span></td>
+        </tr>
+        <tr>
+          <td>Low completeness</td>
+          <td>Re-parse</td>
+          <td><code>POST /api/parse/{bank_id}</code></td>
+          <td><span class="new-tag">NEW</span></td>
+        </tr>
+        <tr>
+          <td>Stale data</td>
+          <td>Crawl Now</td>
+          <td><code>POST /api/crawl/{bank_id}</code></td>
+          <td><span class="exists">EXISTS</span></td>
+        </tr>
+        <tr>
+          <td>Strategy health</td>
+          <td>Re-learn</td>
+          <td><code>POST /api/learn/{bank_id}</code></td>
+          <td><span class="new-tag">NEW</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- WHAT'S REMOVED -->
+<div class="section">
+  <div class="section-title">What's Removed</div>
+  <div class="removed">
+    <div class="removed-title">Deleted from Overview</div>
+    <div class="removed-item">❌ <span>Live Activity feed — was 90% "system ping" noise, replaced by Today's Changes</span></div>
+    <div class="removed-item">❌ <span>Old Rate Heatmap — showed all dashes, replaced by tabbed Rate Intelligence table</span></div>
+    <div class="removed-item">❌ <span>Ring chart for success rate — moved to health bar as inline text with trend</span></div>
+    <div class="removed-item">❌ <span>Sidebar crawl progress panel — consolidated into health bar pipeline status</span></div>
+  </div>
+</div>
+
+<!-- NEW BACKEND REQUIREMENTS -->
+<div class="section">
+  <div class="section-title">New Backend Requirements</div>
+  <div class="new-apis">
+    <table>
+      <thead>
+        <tr><th>Endpoint</th><th>Purpose</th><th>Data Source</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>GET /api/dashboard/alerts</code></td>
+          <td>Aggregated alerts across all 5 categories</td>
+          <td>crawl_logs, loan_programs, banks, bank_strategies</td>
+        </tr>
+        <tr>
+          <td><code>GET /api/dashboard/changes</code></td>
+          <td>Today's meaningful changes (new programs, rate changes, status changes)</td>
+          <td>loan_programs (is_latest diff), crawl_logs</td>
+        </tr>
+        <tr>
+          <td><code>GET /api/dashboard/quality</code></td>
+          <td>Data quality distribution (high/medium/low bank counts)</td>
+          <td>loan_programs (completeness_score, data_confidence)</td>
+        </tr>
+        <tr>
+          <td><code>POST /api/parse/{bank_id}</code></td>
+          <td>CTA: Re-parse raw HTML for a bank</td>
+          <td>crawl_raw_data → parser agent</td>
+        </tr>
+        <tr>
+          <td><code>POST /api/learn/{bank_id}</code></td>
+          <td>CTA: Trigger learning agent for a bank</td>
+          <td>learning agent</td>
+        </tr>
+        <tr>
+          <td><code>GET /api/rates/heatmap</code></td>
+          <td>Extended: add completeness_score, data_confidence, 7d trend</td>
+          <td>loan_programs + computed trend</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</body>
+</html>

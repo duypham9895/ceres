@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -7,6 +8,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from ceres.api.websocket import ConnectionManager
+
+# Cloudflare kills idle WebSockets after 100s. Ping every 30s to stay alive.
+WS_PING_INTERVAL_S = 30
 
 manager = ConnectionManager()
 
@@ -28,6 +32,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     arq_pool = await create_pool(RedisSettings.from_dsn(config.redis_url))
 
+    # API is an orchestrator only. Playwright lives in the worker container.
     task_runner = CrawlTaskRunner(db=db, config=config, arq_pool=arq_pool)
     task_runner.set_broadcast_callback(manager.broadcast)
 
@@ -69,12 +74,26 @@ def create_app(use_lifespan: bool = True) -> FastAPI:
     @app.websocket("/ws/crawl-status")
     async def websocket_endpoint(websocket: WebSocket) -> None:
         await manager.connect(websocket)
+
+        async def _ping_loop() -> None:
+            """Send periodic pings to keep the connection alive through proxies."""
+            while True:
+                await asyncio.sleep(WS_PING_INTERVAL_S)
+                try:
+                    await websocket.send_json({"type": "ping"})
+                except Exception:
+                    break
+
+        ping_task = asyncio.create_task(_ping_loop())
         try:
             while True:
                 data = await websocket.receive_json()
                 if data.get("subscribe") == "all":
                     await websocket.send_json({"event": "subscribed"})
         except WebSocketDisconnect:
+            pass
+        finally:
+            ping_task.cancel()
             manager.disconnect(websocket)
 
     return app

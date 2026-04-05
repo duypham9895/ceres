@@ -30,15 +30,25 @@ class LearningAgent(BaseAgent):
             days: Number of days to analyze.
 
         Returns:
-            Dict with overall_success_rate, coverage, recommendations, and report.
+            Dict with overall_success_rate, parse_success_rate, coverage,
+            recommendations, and report.
         """
-        stats = await self.db.get_crawl_stats()
+        stats = await self.db.get_crawl_stats(days=days)
         banks = await self.db.fetch_banks()
         programs = await self.db.fetch_loan_programs()
+        parse_stats = await self.db.get_parse_stats(days=days)
 
         total = stats.get("total_crawls", 0)
         successes = stats.get("successful", 0)
         overall_success_rate = successes / total if total > 0 else 0.0
+
+        total_raw = sum(row["total_raw_rows"] for row in parse_stats)
+        total_with_programs = sum(
+            row["rows_with_programs"] for row in parse_stats
+        )
+        parse_success_rate = (
+            total_with_programs / total_raw if total_raw > 0 else 0.0
+        )
 
         coverage = _analyze_coverage(programs)
         recommendation_ids = await self._generate_recommendations(
@@ -47,12 +57,14 @@ class LearningAgent(BaseAgent):
 
         report_data = {
             "overall_success_rate": overall_success_rate,
+            "parse_success_rate": parse_success_rate,
             "total_crawls": total,
             "banks_crawled": stats.get("banks_crawled", 0),
             "total_programs_found": stats.get("total_programs_found", 0),
             "failures": stats.get("failed", 0),
             "blocked": stats.get("blocked", 0),
             "coverage": coverage,
+            "parse_stats": parse_stats,
             "recommendation_ids": recommendation_ids,
         }
 
@@ -165,13 +177,15 @@ def _analyze_coverage(programs: list[dict]) -> dict:
 def _format_report(report_data: dict) -> str:
     """Format report data as a human-readable text report."""
     success_pct = report_data["overall_success_rate"] * 100
+    parse_pct = report_data.get("parse_success_rate", 0) * 100
     coverage = report_data.get("coverage", {})
     by_loan_type = coverage.get("by_loan_type", {})
     rec_count = len(report_data.get("recommendation_ids", []))
 
     lines = [
         "=== CERES Learning Report ===",
-        f"Success Rate:       {success_pct:.1f}%",
+        f"Crawl Success:      {success_pct:.1f}%",
+        f"Parse Success:      {parse_pct:.1f}%",
         f"Total Crawls:       {report_data['total_crawls']}",
         f"Banks Crawled:      {report_data['banks_crawled']}",
         f"Programs Found:     {report_data['total_programs_found']}",
@@ -187,5 +201,17 @@ def _format_report(report_data: dict) -> str:
 
     if not by_loan_type:
         lines.append("  (no programs found)")
+
+    parse_stats = report_data.get("parse_stats", [])
+    if parse_stats:
+        lines.append("")
+        lines.append("--- Parse Success by Bank ---")
+        for row in parse_stats:
+            total = row["total_raw_rows"]
+            with_progs = row["rows_with_programs"]
+            pct = (with_progs / total * 100) if total > 0 else 0
+            lines.append(
+                f"  {row['bank_code']}: {with_progs}/{total} ({pct:.0f}%)"
+            )
 
     return "\n".join(lines)

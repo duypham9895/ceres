@@ -18,6 +18,8 @@ class TestCLI:
         assert "daily" in result.output
         assert "lab" in result.output
         assert "strategist" in result.output
+        assert "verify" in result.output
+        assert "verify-release" in result.output
 
     def test_crawler_with_bank_option(self):
         runner = CliRunner()
@@ -49,3 +51,14 @@ class TestCLI:
         runner = CliRunner()
         result = runner.invoke(cli, ["status", "--help"])
         assert "--bank" in result.output
+
+    def test_verify_with_docker_option(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["verify", "--help"])
+        assert "--docker / --no-docker" in result.output
+
+    def test_verify_release_with_bank_option(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["verify-release", "--help"])
+        assert "--docker / --no-docker" in result.output
+        assert "--bank TEXT" in result.output

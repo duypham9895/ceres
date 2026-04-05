@@ -37,9 +37,10 @@ async def test_rebuild_all_enqueues_per_bank():
         {"id": "uuid-3", "bank_code": "mandiri", "website_status": "inactive"},
     ])
     mock_runner = MagicMock(spec=CrawlTaskRunner)
-    mock_runner.start_job = AsyncMock(return_value=CrawlJob(
-        job_id="j1", agent="strategist", status=CrawlJobStatus.QUEUED,
-    ))
+    mock_runner.enqueue_batch = AsyncMock(return_value=[
+        CrawlJob(job_id="j1", agent="strategist", status=CrawlJobStatus.QUEUED),
+        CrawlJob(job_id="j2", agent="strategist", status=CrawlJobStatus.QUEUED),
+    ])
     app.state.db = mock_db
     app.state.task_runner = mock_runner
 
@@ -49,10 +50,10 @@ async def test_rebuild_all_enqueues_per_bank():
     assert resp.status_code == 202
     data = resp.json()
     assert data["queued"] == 2  # Only active banks
-    assert mock_runner.start_job.call_count == 2
-    # All calls should have force=True
-    for call in mock_runner.start_job.call_args_list:
-        assert call.kwargs.get("force") is True
+    mock_runner.enqueue_batch.assert_called_once()
+    call_kwargs = mock_runner.enqueue_batch.call_args.kwargs
+    assert call_kwargs["force"] is True
+    assert set(call_kwargs["bank_codes"]) == {"bca", "bni"}
 
 
 @pytest.mark.asyncio
@@ -63,6 +64,7 @@ async def test_rebuild_all_with_no_active_banks():
         {"id": "uuid-1", "bank_code": "dead", "website_status": "inactive"},
     ])
     mock_runner = MagicMock(spec=CrawlTaskRunner)
+    mock_runner.enqueue_batch = AsyncMock(return_value=[])
     app.state.db = mock_db
     app.state.task_runner = mock_runner
 
@@ -72,4 +74,3 @@ async def test_rebuild_all_with_no_active_banks():
     assert resp.status_code == 202
     data = resp.json()
     assert data["queued"] == 0
-    mock_runner.start_job.assert_not_called()

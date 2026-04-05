@@ -29,7 +29,7 @@ export interface CrawlStatus {
   isConnected: boolean;
 }
 
-const DAILY_STEPS = ['scout', 'strategist', 'crawler', 'parser', 'learning'];
+const DAILY_STEPS = ['scout', 'strategist', 'crawler', 'learning'];
 
 function buildPipelineSteps(agent: string): PipelineStep[] {
   if (agent === 'daily') {
@@ -54,6 +54,25 @@ const INITIAL_STATUS: CrawlStatus = {
   lastCompletedCrawl: null,
   isConnected: false,
 };
+
+const PIPELINE_STATE_KEY = 'ceres-pipeline-state';
+
+function loadPersistedState(): CrawlStatus | null {
+  try {
+    const stored = sessionStorage.getItem(PIPELINE_STATE_KEY);
+    return stored ? (JSON.parse(stored) as CrawlStatus) : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistState(state: CrawlStatus): void {
+  try {
+    sessionStorage.setItem(PIPELINE_STATE_KEY, JSON.stringify(state));
+  } catch {
+    // sessionStorage unavailable
+  }
+}
 
 // --- Context ---
 
@@ -85,10 +104,14 @@ interface StatusResponse {
 
 export function CrawlStatusProvider({ children }: { children: ReactNode }) {
   const { lastEvent, isConnected } = useWebSocket();
-  const [status, setStatus] = useState<CrawlStatus>(INITIAL_STATUS);
+  const [status, setStatus] = useState<CrawlStatus>(() => {
+    // Restore last pipeline state from sessionStorage on mount
+    const persisted = loadPersistedState();
+    return persisted ? { ...persisted, isConnected: false } : INITIAL_STATUS;
+  });
   const hydrated = useRef(false);
 
-  // Hydrate from /api/status on mount
+  // Hydrate from /api/status on mount (overrides persisted state if a job is active)
   useEffect(() => {
     if (hydrated.current) return;
     hydrated.current = true;
@@ -127,7 +150,7 @@ export function CrawlStatusProvider({ children }: { children: ReactNode }) {
         }));
       }
     }).catch(() => {
-      // API unavailable — stay in initial state
+      // API unavailable — keep persisted state
     });
   }, [isConnected]);
 
@@ -141,6 +164,13 @@ export function CrawlStatusProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setStatus((prev) => prev.isConnected === isConnected ? prev : { ...prev, isConnected });
   }, [isConnected]);
+
+  // Persist pipeline state to sessionStorage whenever it changes
+  useEffect(() => {
+    if (status.steps.length > 0) {
+      persistState(status);
+    }
+  }, [status]);
 
   return (
     <CrawlStatusContext.Provider value={status}>

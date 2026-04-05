@@ -170,3 +170,37 @@ class TestStrategistAgent:
             result = await agent.run(bank_code="BCA")
         assert result["errors"] == 1
         assert result["strategies_created"] == 0
+
+    @pytest.mark.asyncio
+    async def test_run_stops_shared_browser_manager(self):
+        """All-bank runs must clean up the shared Playwright manager."""
+        db = AsyncMock()
+        db.fetch_banks = AsyncMock(return_value=[
+            {
+                "id": "uuid1",
+                "bank_code": "BCA",
+                "website_url": "https://bca.co.id",
+                "api_available": False,
+                "website_status": "active",
+            }
+        ])
+        db.fetch_active_strategies = AsyncMock(return_value=[])
+        db.upsert_strategy = AsyncMock()
+
+        mock_manager = AsyncMock()
+        with patch("ceres.agents.strategist.BrowserManager", return_value=mock_manager):
+            agent = StrategistAgent(db=db)
+            with patch.object(
+                agent, "_analyze_bank", new_callable=AsyncMock
+            ) as mock_analyze:
+                mock_analyze.return_value = {
+                    "anti_bot_detected": False,
+                    "anti_bot_type": None,
+                    "bypass_method": "headless_browser",
+                    "loan_page_urls": ["https://bca.co.id/kpr"],
+                    "selectors": {},
+                    "rate_limit_ms": 2000,
+                }
+                await agent.run()
+
+        mock_manager.stop.assert_called_once()

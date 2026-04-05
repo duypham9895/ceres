@@ -114,7 +114,10 @@ async def run_agent_task(
     )
 
     agent_class = _get_agent_class(agent_name)
-    agent = agent_class(db=db, config=config)
+    kwargs_init: dict[str, Any] = {"db": db, "config": config}
+    if agent_name == "crawler" and "browser_manager" in ctx:
+        kwargs_init["browser_manager"] = ctx["browser_manager"]
+    agent = agent_class(**kwargs_init)
 
     kwargs: dict[str, Any] = {}
     if bank_code is not None:
@@ -124,7 +127,7 @@ async def run_agent_task(
 
     try:
         result = await agent.execute(**kwargs)
-    except Exception as exc:
+    except BaseException as exc:
         await redis.publish(
             CHANNEL,
             _event(
@@ -159,21 +162,34 @@ async def run_agent_task(
 
 
 async def startup(ctx: dict) -> None:
-    """arq startup hook — create DB connection and load config."""
+    """arq startup hook — create DB connection, load config, start browser manager."""
+    from ceres.browser.manager import BrowserManager
+
     config = load_config()
     db = Database(config.database_url)
     await db.connect()
+
+    browser_manager = BrowserManager(
+        max_contexts=int(os.environ.get("CERES_MAX_WORKERS", "3")),
+    )
+    await browser_manager.start()
+
     ctx["db"] = db
     ctx["config"] = config
-    logger.info("Worker started: DB connected")
+    ctx["browser_manager"] = browser_manager
+    logger.info("Worker started: DB connected, browser manager ready")
 
 
 async def shutdown(ctx: dict) -> None:
-    """arq shutdown hook — close DB connection."""
+    """arq shutdown hook — close browser manager and DB connection."""
+    browser_manager = ctx.get("browser_manager")
+    if browser_manager is not None:
+        await browser_manager.stop()
+
     db: Database = ctx.get("db")
     if db is not None:
         await db.disconnect()
-    logger.info("Worker stopped: DB disconnected")
+    logger.info("Worker stopped: browser manager and DB disconnected")
 
 
 # ---------------------------------------------------------------------------
@@ -182,11 +198,6 @@ async def shutdown(ctx: dict) -> None:
 
 _redis_url: str = os.environ.get("REDIS_URL", "redis://localhost:6379")
 _max_jobs: int = int(os.environ.get("CERES_MAX_WORKERS", "3"))
-
-# Parse redis URL into RedisSettings
-_redis_parts = _redis_url.replace("redis://", "").split(":")
-_redis_host = _redis_parts[0] if _redis_parts else "localhost"
-_redis_port = int(_redis_parts[1]) if len(_redis_parts) > 1 else 6379
 
 
 class WorkerSettings:
@@ -197,5 +208,5 @@ class WorkerSettings:
     on_shutdown = shutdown
     max_jobs = _max_jobs
     job_timeout = 600
-    max_tries = 3
-    redis_settings = RedisSettings(host=_redis_host, port=_redis_port)
+    max_tries = 1
+    redis_settings = RedisSettings.from_dsn(_redis_url)

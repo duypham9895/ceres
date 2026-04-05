@@ -14,6 +14,7 @@ from ceres.utils.rate_limiter import RateLimiter
 
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_MAX_CONCURRENCY = 5
+PAGE_TIMEOUT_MS = 30_000
 BACKOFF_BASE_S = 1.0
 
 
@@ -26,12 +27,19 @@ class CrawlerAgent(BaseAgent):
 
     name: str = "crawler"
 
-    def __init__(self, db: Database, config: Optional[Any] = None) -> None:
+    def __init__(
+        self,
+        db: Database,
+        config: Optional[Any] = None,
+        browser_manager: Optional[BrowserManager] = None,
+    ) -> None:
         super().__init__(db=db, config=config)
         self._max_retries: int = getattr(config, "max_retries", DEFAULT_MAX_RETRIES)
         self._max_concurrency: int = getattr(
             config, "max_concurrency", DEFAULT_MAX_CONCURRENCY
         )
+        self._browser_manager = browser_manager
+        self._owns_browser = False
 
     async def run(self, **kwargs) -> dict:
         """Crawl active bank strategies.
@@ -48,32 +56,45 @@ class CrawlerAgent(BaseAgent):
         if bank_code is not None:
             strategies = [s for s in strategies if s["bank_code"] == bank_code]
 
-        semaphore = asyncio.Semaphore(self._max_concurrency)
-        stats = {"banks_crawled": 0, "pages_fetched": 0, "failures": 0}
+        # If no shared browser manager was injected, create one for this run
+        if self._browser_manager is None:
+            self._browser_manager = BrowserManager(
+                max_contexts=self._max_concurrency,
+            )
+            self._owns_browser = True
 
-        async def _bounded_crawl(strategy: dict) -> dict:
-            async with semaphore:
-                return await self._crawl_bank(strategy)
+        try:
+            semaphore = asyncio.Semaphore(self._max_concurrency)
+            stats = {"banks_crawled": 0, "pages_fetched": 0, "failures": 0}
 
-        results = await asyncio.gather(
-            *(_bounded_crawl(s) for s in strategies),
-            return_exceptions=True,
-        )
+            async def _bounded_crawl(strategy: dict) -> dict:
+                async with semaphore:
+                    return await self._crawl_bank(strategy)
 
-        for result in results:
-            if isinstance(result, BaseException):
-                self.logger.error(f"Bank crawl failed: {result}")
-                stats["failures"] += 1
-            else:
-                stats["banks_crawled"] += result["banks_crawled"]
-                stats["pages_fetched"] += result["pages_fetched"]
-                stats["failures"] += result["failures"]
+            results = await asyncio.gather(
+                *(_bounded_crawl(s) for s in strategies),
+                return_exceptions=True,
+            )
 
-        self.logger.info(
-            f"Crawl complete: {stats['banks_crawled']} banks, "
-            f"{stats['pages_fetched']} pages, {stats['failures']} failures"
-        )
-        return stats
+            for result in results:
+                if isinstance(result, BaseException):
+                    self.logger.error(f"Bank crawl failed: {result}")
+                    stats["failures"] += 1
+                else:
+                    stats["banks_crawled"] += result["banks_crawled"]
+                    stats["pages_fetched"] += result["pages_fetched"]
+                    stats["failures"] += result["failures"]
+
+            self.logger.info(
+                f"Crawl complete: {stats['banks_crawled']} banks, "
+                f"{stats['pages_fetched']} pages, {stats['failures']} failures"
+            )
+            return stats
+        finally:
+            if self._owns_browser and self._browser_manager is not None:
+                await self._browser_manager.stop()
+                self._browser_manager = None
+                self._owns_browser = False
 
     async def _crawl_bank(self, strategy: dict) -> dict:
         """Crawl all loan pages for a single bank strategy.
@@ -192,23 +213,27 @@ class CrawlerAgent(BaseAgent):
         raise last_exc  # type: ignore[misc]
 
     async def _fetch_page(self, url: str, strategy: dict) -> str:
-        """Fetch a single page using the browser manager.
+        """Fetch a single page using the shared browser manager.
 
-        Chooses BrowserType based on the strategy's bypass_method.
-        Returns the page HTML content.
+        Acquires a context slot (semaphore-gated), navigates, extracts HTML,
+        and releases the slot. Each page gets its own lightweight context
+        to isolate cookies/state between pages.
         """
         bypass = strategy.get("bypass_method", "headless_browser")
         browser_type = (
             BrowserType.UNDETECTED
-            if bypass == "undetected"
+            if bypass in {"undetected", "undetected_chrome"}
             else BrowserType.PLAYWRIGHT
         )
 
-        manager = BrowserManager()
-        browser, page = await manager.create_context(browser_type=browser_type)
+        context, page = await self._browser_manager.create_context(
+            browser_type=browser_type,
+        )
         try:
             if browser_type == BrowserType.PLAYWRIGHT:
-                await page.goto(url, wait_until="networkidle", timeout=30000)
+                await page.goto(
+                    url, wait_until="networkidle", timeout=PAGE_TIMEOUT_MS,
+                )
                 html = await page.content()
             else:
                 loop = asyncio.get_event_loop()
@@ -218,4 +243,4 @@ class CrawlerAgent(BaseAgent):
                 )
             return html
         finally:
-            await manager.close_context(browser, browser_type)
+            await self._browser_manager.close_context(context, browser_type)

@@ -128,10 +128,8 @@ _COMPLETENESS_FIELDS: tuple[str, ...] = (
     "max_interest_rate",
     "min_amount",
     "max_amount",
-    "min_tenure_months",
-    "max_tenure_months",
-    "rate_type",
-    "min_dp_percentage",
+    "min_tenor_months",
+    "max_tenor_months",
 )
 
 

@@ -41,15 +41,13 @@ class TestCompletenessScore:
             "loan_type": "KPR",
             "min_interest_rate": 3.5,
             "max_interest_rate": 7.0,
-            "min_loan_amount": 100_000_000,
-            "max_loan_amount": 5_000_000_000,
-            "min_tenure_months": 12,
-            "max_tenure_months": 300,
-            "rate_type": "MIXED",
-            "min_dp_percentage": 10,
+            "min_amount": 100_000_000,
+            "max_amount": 5_000_000_000,
+            "min_tenor_months": 12,
+            "max_tenor_months": 300,
         }
         score = calculate_completeness_score(data)
-        assert score >= 0.8
+        assert score == 1.0
 
     def test_minimal_data_scores_low(self):
         data = {"program_name": "KPR BCA", "loan_type": "KPR"}
