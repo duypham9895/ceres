@@ -16,7 +16,7 @@ from lxml import html
 
 from ceres.agents.base import BaseAgent
 from ceres.database import Database
-from ceres.extractors.llm import LLMExtractor
+from ceres.extractors.llm import ClaudeLLMExtractor, LLMExtractor, MiniMaxLLMExtractor
 from ceres.extractors.normalizer import (
     normalize_amount,
     normalize_loan_type,
@@ -58,7 +58,7 @@ class ParserAgent(BaseAgent):
     ) -> None:
         super().__init__(db=db, config=config)
         self._selector_extractor = SelectorExtractor()
-        self._llm_extractor = llm_extractor
+        self._llm_extractor = llm_extractor or _auto_create_llm_extractor()
 
     async def run(self, bank_code: Optional[str] = None, **kwargs) -> dict:
         """Parse unparsed HTML rows into loan programs.
@@ -335,11 +335,24 @@ class ParserAgent(BaseAgent):
             "max_amount": prog_data.get("max_amount"),
             "min_tenor_months": prog_data.get("min_tenor_months"),
             "max_tenor_months": prog_data.get("max_tenor_months"),
-            "data_confidence": 0.7,
+            "data_confidence": _calc_llm_confidence(prog_data),
         }
 
         program["completeness_score"] = calculate_completeness_score(program)
         return program
+
+
+def _calc_llm_confidence(prog_data: dict) -> float:
+    """Calculate confidence based on how many fields the LLM actually returned."""
+    _LLM_FIELDS = (
+        "program_name", "min_interest_rate", "max_interest_rate",
+        "min_amount", "max_amount", "min_tenor_months", "max_tenor_months",
+        "loan_type",
+    )
+    fields_present = sum(
+        1 for f in _LLM_FIELDS if prog_data.get(f) is not None
+    )
+    return round(0.4 + (fields_present / 8) * 0.5, 2)
 
 
 def _parse_selectors(selectors_raw: str | None) -> dict | None:
@@ -362,7 +375,7 @@ def _normalize_text(text: str) -> str:
 def _is_program_name(text: str) -> bool:
     return bool(
         text
-        and len(text) <= 120
+        and len(text) <= 300
         and _PROGRAM_KEYWORDS.search(text)
     )
 
@@ -370,15 +383,39 @@ def _is_program_name(text: str) -> bool:
 def _extract_context_text(element: html.HtmlElement) -> str:
     """Use a nearby section/article/div as extraction context when possible."""
     current = element
-    for _ in range(4):
+    for _ in range(8):
         parent = current.getparent()
         if parent is None:
             break
         current = parent
         text = _normalize_text(current.text_content())
-        if 40 <= len(text) <= 2000:
+        if 20 <= len(text) <= 5000:
             return text
     return _normalize_text(element.text_content())
+
+
+def _auto_create_llm_extractor() -> LLMExtractor | None:
+    """Auto-create an LLM extractor from available API keys."""
+    import os
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if api_key:
+        try:
+            import anthropic
+
+            client = anthropic.AsyncAnthropic(api_key=api_key)
+            logger.info("Auto-creating ClaudeLLMExtractor from ANTHROPIC_API_KEY")
+            return ClaudeLLMExtractor(client=client)
+        except ImportError:
+            logger.warning("anthropic package not installed; skipping Claude extractor")
+
+    api_key = os.environ.get("MINIMAX_API_KEY")
+    if api_key:
+        logger.info("Auto-creating MiniMaxLLMExtractor from MINIMAX_API_KEY")
+        return MiniMaxLLMExtractor(api_key=api_key)
+
+    logger.warning("No LLM API key found; LLM extraction fallback disabled")
+    return None
 
 
 def _run_sync(coro):

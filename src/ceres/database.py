@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Optional
 
 import asyncpg
+
+logger = logging.getLogger(__name__)
+
+# Data quality constants
+MIN_CONFIDENCE_THRESHOLD = 0.4
+MIN_RATE_BOUND = 0.1
+MAX_RATE_BOUND = 30.0
 
 
 class Database:
@@ -380,6 +388,7 @@ class Database:
                 programs_produced,
             )
         except asyncpg.UndefinedColumnError:
+            logger.warning("mark_parsed: programs_produced column missing — using fallback query")
             await self.pool.execute(
                 """
                 UPDATE crawl_raw_data
@@ -422,76 +431,138 @@ class Database:
         completeness_score: float = 0.0,
         raw_data: Optional[dict] = None,
         source_url: Optional[str] = None,
-    ) -> dict[str, Any]:
-        """Insert a new loan program version, marking previous versions as not latest."""
-        # Mark previous versions as not latest
-        await self.pool.execute(
-            """
-            UPDATE loan_programs
-            SET is_latest = false
-            WHERE bank_id = $1::uuid
-              AND program_name = $2
-              AND loan_type = $3
-              AND is_latest = true
-            """,
-            bank_id,
-            program_name,
-            loan_type,
-        )
+    ) -> Optional[dict[str, Any]]:
+        """Insert a new loan program version, marking previous versions as not latest.
 
-        return await self.pool.fetchrow(
-            """
-            INSERT INTO loan_programs (
-                bank_id, program_name, loan_type,
-                rate_fixed, rate_floating, rate_promo, rate_promo_duration_months,
-                min_interest_rate, max_interest_rate,
-                min_amount, max_amount, min_tenor_months, max_tenor_months,
-                min_age, max_age, min_income,
-                employment_types, required_documents,
-                admin_fee_pct, provision_fee_pct, insurance_required,
-                features, data_confidence, completeness_score,
-                raw_data, source_url, is_latest
+        Returns None if the row is rejected by data quality checks.
+        """
+        # A1: Minimum confidence threshold — reject garbage extractions
+        if data_confidence < MIN_CONFIDENCE_THRESHOLD:
+            logger.warning(
+                "Skipping loan program '%s' for bank %s: "
+                "data_confidence %.2f below threshold %.2f",
+                program_name, bank_id, data_confidence, MIN_CONFIDENCE_THRESHOLD,
             )
-            VALUES (
-                $1::uuid, $2, $3,
-                $4, $5, $6, $7,
-                $8, $9,
-                $10, $11, $12, $13,
-                $14, $15, $16,
-                $17::jsonb, $18::jsonb,
-                $19, $20, $21,
-                $22::jsonb, $23, $24,
-                $25::jsonb, $26, true
+            return None
+
+        # A2: Rate sanity bounds — nullify out-of-range rates
+        if min_interest_rate is not None and not (MIN_RATE_BOUND <= min_interest_rate <= MAX_RATE_BOUND):
+            logger.warning(
+                "Nullifying min_interest_rate %.2f for '%s' (bank %s): outside [%.1f, %.1f]",
+                min_interest_rate, program_name, bank_id, MIN_RATE_BOUND, MAX_RATE_BOUND,
             )
-            RETURNING *
-            """,
-            bank_id,
-            program_name,
-            loan_type,
-            rate_fixed,
-            rate_floating,
-            rate_promo,
-            rate_promo_duration_months,
-            min_interest_rate,
-            max_interest_rate,
-            min_amount,
-            max_amount,
-            min_tenor_months,
-            max_tenor_months,
-            min_age,
-            max_age,
-            min_income,
-            json.dumps(employment_types or []),
-            json.dumps(required_documents or []),
-            admin_fee_pct,
-            provision_fee_pct,
-            insurance_required,
-            json.dumps(features or []),
-            data_confidence,
-            completeness_score,
-            json.dumps(raw_data or {}),
-            source_url,
-        )
+            min_interest_rate = None
+        if max_interest_rate is not None and not (MIN_RATE_BOUND <= max_interest_rate <= MAX_RATE_BOUND):
+            logger.warning(
+                "Nullifying max_interest_rate %.2f for '%s' (bank %s): outside [%.1f, %.1f]",
+                max_interest_rate, program_name, bank_id, MIN_RATE_BOUND, MAX_RATE_BOUND,
+            )
+            max_interest_rate = None
+
+        # A3: Min/max cross-validation — swap if inverted
+        if (
+            min_interest_rate is not None
+            and max_interest_rate is not None
+            and min_interest_rate > max_interest_rate
+        ):
+            logger.warning(
+                "Swapping inverted interest rates (%.2f > %.2f) for '%s' (bank %s)",
+                min_interest_rate, max_interest_rate, program_name, bank_id,
+            )
+            min_interest_rate, max_interest_rate = max_interest_rate, min_interest_rate
+
+        if (
+            min_amount is not None
+            and max_amount is not None
+            and min_amount > max_amount
+        ):
+            logger.warning(
+                "Swapping inverted amounts (%.2f > %.2f) for '%s' (bank %s)",
+                min_amount, max_amount, program_name, bank_id,
+            )
+            min_amount, max_amount = max_amount, min_amount
+
+        if (
+            min_tenor_months is not None
+            and max_tenor_months is not None
+            and min_tenor_months > max_tenor_months
+        ):
+            logger.warning(
+                "Swapping inverted tenor months (%d > %d) for '%s' (bank %s)",
+                min_tenor_months, max_tenor_months, program_name, bank_id,
+            )
+            min_tenor_months, max_tenor_months = max_tenor_months, min_tenor_months
+
+        # Mark previous versions as not latest and insert new version atomically
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    UPDATE loan_programs
+                    SET is_latest = false
+                    WHERE bank_id = $1::uuid
+                      AND program_name = $2
+                      AND loan_type = $3
+                      AND is_latest = true
+                    """,
+                    bank_id,
+                    program_name,
+                    loan_type,
+                )
+
+                return await conn.fetchrow(
+                    """
+                    INSERT INTO loan_programs (
+                        bank_id, program_name, loan_type,
+                        rate_fixed, rate_floating, rate_promo, rate_promo_duration_months,
+                        min_interest_rate, max_interest_rate,
+                        min_amount, max_amount, min_tenor_months, max_tenor_months,
+                        min_age, max_age, min_income,
+                        employment_types, required_documents,
+                        admin_fee_pct, provision_fee_pct, insurance_required,
+                        features, data_confidence, completeness_score,
+                        raw_data, source_url, is_latest
+                    )
+                    VALUES (
+                        $1::uuid, $2, $3,
+                        $4, $5, $6, $7,
+                        $8, $9,
+                        $10, $11, $12, $13,
+                        $14, $15, $16,
+                        $17::jsonb, $18::jsonb,
+                        $19, $20, $21,
+                        $22::jsonb, $23, $24,
+                        $25::jsonb, $26, true
+                    )
+                    RETURNING *
+                    """,
+                    bank_id,
+                    program_name,
+                    loan_type,
+                    rate_fixed,
+                    rate_floating,
+                    rate_promo,
+                    rate_promo_duration_months,
+                    min_interest_rate,
+                    max_interest_rate,
+                    min_amount,
+                    max_amount,
+                    min_tenor_months,
+                    max_tenor_months,
+                    min_age,
+                    max_age,
+                    min_income,
+                    json.dumps(employment_types or []),
+                    json.dumps(required_documents or []),
+                    admin_fee_pct,
+                    provision_fee_pct,
+                    insurance_required,
+                    json.dumps(features or []),
+                    data_confidence,
+                    completeness_score,
+                    json.dumps(raw_data or {}),
+                    source_url,
+                )
 
     async def fetch_loan_programs(
         self,
@@ -698,18 +769,21 @@ class Database:
     # Agent Run Tracking
     # ------------------------------------------------------------------
 
-    async def log_agent_start(self, *, agent_name: str) -> dict[str, Any]:
+    async def log_agent_start(
+        self, *, agent_name: str, job_id: Optional[str] = None,
+    ) -> dict[str, Any]:
         """Insert a new agent_runs row with status='running'.
 
         Returns the row including the generated id for later updates.
         """
         row = await self.pool.fetchrow(
             """
-            INSERT INTO agent_runs (agent_name, status)
-            VALUES ($1, 'running')
+            INSERT INTO agent_runs (agent_name, status, job_id)
+            VALUES ($1, 'running', $2)
             RETURNING *
             """,
             agent_name,
+            job_id,
         )
         return dict(row)
 

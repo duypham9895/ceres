@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -58,26 +58,24 @@ export default function Banks() {
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
   const queryString = toQueryString();
-  const paginatedQuery = queryString
-    ? `${queryString}&page=${page}&limit=${LIMIT}`
-    : `page=${page}&limit=${LIMIT}`;
+  const paginatedQuery = [
+    queryString,
+    `page=${page}`,
+    `limit=${LIMIT}`,
+    `sort_by=${sortBy}`,
+    `sort_dir=${sortDir}`,
+  ].filter(Boolean).join('&');
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['banks', queryString, page],
+    queryKey: ['banks', queryString, page, sortBy, sortDir],
     queryFn: () => apiFetch<PaginatedResponse<Bank>>(`/api/banks?${paginatedQuery}`),
+    refetchInterval: 30_000,
   });
 
   const totalPages = data ? Math.ceil(data.total / LIMIT) : 0;
 
-  const sortedBanks = useMemo(() => {
-    if (!data?.data) return [];
-    return [...data.data].sort((a, b) => {
-      const aVal = a[sortBy as keyof Bank] ?? '';
-      const bVal = b[sortBy as keyof Bank] ?? '';
-      const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-  }, [data?.data, sortBy, sortDir]);
+  // Server handles sorting; use data directly
+  const sortedBanks = data?.data ?? [];
 
   const activeCount_ = data?.data.filter(b => b.website_status === 'active').length ?? 0;
   const unreachableCount = data?.data.filter(b => b.website_status === 'unreachable').length ?? 0;
@@ -116,21 +114,45 @@ export default function Banks() {
 
   const bulkCrawl = async () => {
     const bankIds = Array.from(selected);
-    await Promise.all(bankIds.map(id => {
+    const results = await Promise.allSettled(bankIds.map(id => {
       const bank = data?.data.find(b => b.id === id);
       return bank ? apiPost(`/api/crawl/crawler?bank=${bank.bank_code}`) : Promise.resolve();
     }));
-    toast.success(`Crawl triggered for ${bankIds.length} banks`);
+    const failed = results
+      .map((r, i) => (r.status === 'rejected' ? bankIds[i] : null))
+      .filter(Boolean);
+    if (failed.length > 0) {
+      const failedNames = failed
+        .map(id => data?.data.find(b => b.id === id)?.bank_code ?? id)
+        .join(', ');
+      toast.error(`Crawl failed for: ${failedNames}`);
+    }
+    const succeeded = results.filter(r => r.status === 'fulfilled').length;
+    if (succeeded > 0) {
+      toast.success(`Crawl triggered for ${succeeded} banks`);
+    }
     setSelected(new Set());
   };
 
   const bulkRelearn = async () => {
     const bankIds = Array.from(selected);
-    await Promise.all(bankIds.map(id => {
+    const results = await Promise.allSettled(bankIds.map(id => {
       const bank = data?.data.find(b => b.id === id);
       return bank ? apiPost(`/api/crawl/learning?bank=${bank.bank_code}`) : Promise.resolve();
     }));
-    toast.success(`Re-learn triggered for ${bankIds.length} banks`);
+    const failed = results
+      .map((r, i) => (r.status === 'rejected' ? bankIds[i] : null))
+      .filter(Boolean);
+    if (failed.length > 0) {
+      const failedNames = failed
+        .map(id => data?.data.find(b => b.id === id)?.bank_code ?? id)
+        .join(', ');
+      toast.error(`Re-learn failed for: ${failedNames}`);
+    }
+    const succeeded = results.filter(r => r.status === 'fulfilled').length;
+    if (succeeded > 0) {
+      toast.success(`Re-learn triggered for ${succeeded} banks`);
+    }
     setSelected(new Set());
   };
 
@@ -255,7 +277,9 @@ export default function Banks() {
 
           <div className="flex items-center justify-between mt-4">
             <p className="text-sm text-text-secondary">
-              Showing {(page - 1) * LIMIT + 1}–{Math.min(page * LIMIT, data.total)} of {data.total}
+              {data.total === 0
+                ? 'No results'
+                : `Showing ${(page - 1) * LIMIT + 1}–${Math.min(page * LIMIT, data.total)} of ${data.total}`}
             </p>
             <div className="flex gap-2">
               <button

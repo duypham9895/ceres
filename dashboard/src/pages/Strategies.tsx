@@ -108,7 +108,7 @@ export default function Strategies() {
   const { data: agentRuns } = useQuery({
     queryKey: ['agent-runs-latest'],
     queryFn: () => apiFetch<{ data: AgentRun[] }>('/api/agent-runs/latest').then(r => r.data),
-    enabled: !data || data.length === 0,
+    enabled: true,
   });
 
   const sorted = useMemo(
@@ -116,17 +116,26 @@ export default function Strategies() {
     [data],
   );
 
+  // NOTE: Stats computed from current page only (max LIMIT items).
+  // totalBanks uses the paginated envelope total; avgSuccess is page-scoped.
   const { totalBanks, avgSuccess, needAttention, healthyCount, degradedCount, deadCount } = useMemo(() => {
-    const total = sorted.length;
-    const avg = total > 0
-      ? Math.round((sorted.reduce((sum, s) => sum + s.success_rate, 0) / total) * 100)
+    const pageCount = sorted.length;
+    const avg = pageCount > 0
+      ? Math.round((sorted.reduce((sum, s) => sum + s.success_rate, 0) / pageCount) * 100)
       : 0;
     const attention = sorted.filter(s => s.success_rate === 0).length;
     const healthy = sorted.filter(s => s.success_rate >= 0.7).length;
     const degraded = sorted.filter(s => s.success_rate >= 0.3 && s.success_rate < 0.7).length;
     const dead = sorted.filter(s => s.success_rate < 0.3).length;
-    return { totalBanks: total, avgSuccess: avg, needAttention: attention, healthyCount: healthy, degradedCount: degraded, deadCount: dead };
-  }, [sorted]);
+    return {
+      totalBanks: paginatedData?.total ?? pageCount,
+      avgSuccess: avg,
+      needAttention: attention,
+      healthyCount: healthy,
+      degradedCount: degraded,
+      deadCount: dead,
+    };
+  }, [sorted, paginatedData?.total]);
 
   const updateHeaderCheckbox = useCallback((selected: ReadonlySet<string>, total: number) => {
     if (headerCheckboxRef.current) {
@@ -172,8 +181,12 @@ export default function Strategies() {
     setIsBulkRunning(true);
     setBulkStatus('Rebuilding all selected banks...');
     try {
+      const body = selectedBanks.size > 0
+        ? { bank_codes: Array.from(selectedBanks) }
+        : undefined;
       const resp = await apiPost<{ queued: string[]; total_banks: number; failed: string[] }>(
-        '/api/strategies/rebuild-all'
+        '/api/strategies/rebuild-all',
+        body,
       );
       if (resp.failed?.length > 0) {
         toast.error(`Failed to queue: ${resp.failed.join(', ')}`);
@@ -251,7 +264,7 @@ export default function Strategies() {
         { label: 'healthy', value: healthyCount, color: 'green' },
         { label: 'degraded', value: degradedCount, color: 'yellow' },
         { label: 'dead', value: deadCount, color: 'red' },
-        { label: `banks (${avgSuccess}% avg success)`, value: totalBanks, color: 'blue' },
+        { label: `banks (${avgSuccess}% page avg success)`, value: totalBanks, color: 'blue' },
       ]} />
 
       {/* Bulk action bar — visible when banks selected OR status message showing */}

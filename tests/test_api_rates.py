@@ -38,11 +38,14 @@ class TestRatesHeatmap:
         db.pool = AsyncMock()
         db.pool.fetch = AsyncMock(return_value=[
             {"bank_id": "uuid-bca", "bank_code": "BCA", "bank_name": "Bank Central Asia",
-             "website_status": "active", "loan_type": "KPR", "min_rate": 7.2},
+             "website_status": "active", "loan_type": "KPR", "min_rate": 7.2,
+             "completeness_score": 0.75, "data_confidence": 0.8},
             {"bank_id": "uuid-bca", "bank_code": "BCA", "bank_name": "Bank Central Asia",
-             "website_status": "active", "loan_type": "KPA", "min_rate": 8.5},
+             "website_status": "active", "loan_type": "KPA", "min_rate": 8.5,
+             "completeness_score": 0.65, "data_confidence": 0.7},
             {"bank_id": "uuid-bri", "bank_code": "BRI", "bank_name": "Bank Rakyat Indonesia",
-             "website_status": "active", "loan_type": "KPR", "min_rate": 6.9},
+             "website_status": "active", "loan_type": "KPR", "min_rate": 6.9,
+             "completeness_score": 0.80, "data_confidence": 0.9},
         ])
 
         app = _make_test_app(db)
@@ -88,7 +91,8 @@ class TestRatesHeatmap:
         db.pool = AsyncMock()
         db.pool.fetch = AsyncMock(return_value=[
             {"bank_id": "uuid-mega", "bank_code": "MEGA", "bank_name": "Bank Mega",
-             "website_status": "blocked", "loan_type": None, "min_rate": None},
+             "website_status": "blocked", "loan_type": None, "min_rate": None,
+             "completeness_score": None, "data_confidence": None},
         ])
 
         app = _make_test_app(db)

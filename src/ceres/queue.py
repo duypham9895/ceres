@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional, Type
 
 from arq.connections import RedisSettings
+from arq.cron import cron
 
 from ceres.config import load_config
 from ceres.database import Database
@@ -101,6 +102,14 @@ async def run_agent_task(
     db: Database = ctx["db"]
     config = ctx["config"]
 
+    # Log agent run start to database
+    run_id: Optional[str] = None
+    try:
+        run_row = await db.log_agent_start(agent_name=agent_name, job_id=job_id)
+        run_id = str(run_row["id"])
+    except Exception:
+        logger.warning("Failed to log agent start for %s (job %s)", agent_name, job_id)
+
     await redis.publish(
         CHANNEL,
         _event(
@@ -128,6 +137,13 @@ async def run_agent_task(
     try:
         result = await agent.execute(**kwargs)
     except BaseException as exc:
+        # Log failure to database
+        if run_id is not None:
+            try:
+                await db.log_agent_error(run_id=run_id, error_message=str(exc))
+            except Exception:
+                logger.warning("Failed to log agent error for %s", agent_name)
+
         await redis.publish(
             CHANNEL,
             _event(
@@ -140,6 +156,13 @@ async def run_agent_task(
             ),
         )
         raise
+
+    # Log success to database
+    if run_id is not None:
+        try:
+            await db.log_agent_finish(run_id=run_id, result=result or {})
+        except Exception:
+            logger.warning("Failed to log agent finish for %s", agent_name)
 
     await redis.publish(
         CHANNEL,
@@ -193,20 +216,63 @@ async def shutdown(ctx: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Scheduled daily pipeline
+# ---------------------------------------------------------------------------
+
+
+async def run_daily_pipeline(ctx: dict) -> dict:
+    """Cron task that runs the full daily pipeline: scout -> strategist -> crawler -> learning.
+
+    Each step is dispatched as an arq job and awaited sequentially.
+    """
+    import uuid
+
+    db: Database = ctx["db"]
+    config = ctx["config"]
+    redis = ctx["redis"]
+
+    steps = ["scout", "strategist", "crawler", "learning"]
+    results: dict = {}
+
+    for step_name in steps:
+        job_id = str(uuid.uuid4())
+        logger.info("Daily pipeline: starting %s (job %s)", step_name, job_id)
+
+        try:
+            step_result = await run_agent_task(
+                ctx,
+                job_id=job_id,
+                agent_name=step_name,
+            )
+            results = {**results, step_name: step_result}
+        except Exception as exc:
+            logger.error("Daily pipeline: %s failed: %s", step_name, exc)
+            results = {**results, step_name: {"error": str(exc)}}
+            break
+
+    logger.info("Daily pipeline complete: %s", list(results.keys()))
+    return results
+
+
+# ---------------------------------------------------------------------------
 # arq WorkerSettings
 # ---------------------------------------------------------------------------
 
 _redis_url: str = os.environ.get("REDIS_URL", "redis://localhost:6379")
 _max_jobs: int = int(os.environ.get("CERES_MAX_WORKERS", "3"))
+_max_retries: int = int(os.environ.get("CERES_MAX_RETRIES", "3"))
 
 
 class WorkerSettings:
     """arq worker configuration."""
 
     functions = [run_agent_task]
+    cron_jobs = [
+        cron(run_daily_pipeline, hour=2, minute=0),
+    ]
     on_startup = startup
     on_shutdown = shutdown
     max_jobs = _max_jobs
     job_timeout = 600
-    max_tries = 1
+    max_tries = _max_retries
     redis_settings = RedisSettings.from_dsn(_redis_url)

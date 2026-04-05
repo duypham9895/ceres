@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { apiFetch, apiPost } from '../api/client';
+import { apiFetch, apiPost, API_URL } from '../api/client';
 import type { PaginatedResponse } from '../api/client';
 import type { CompareResponse } from '../types/dashboard';
 import { formatRange, formatAmountRange } from '../utils/format';
@@ -97,8 +97,6 @@ function RateChips({ program }: { readonly program: LoanProgram }) {
     </div>
   );
 }
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export default function LoanPrograms() {
   const {
@@ -454,7 +452,9 @@ export default function LoanPrograms() {
               {/* Pagination */}
               <div className="flex items-center justify-between mt-4">
                 <p className="text-sm text-text-secondary">
-                  Showing {(page - 1) * LIMIT + 1}-{Math.min(page * LIMIT, data.total)} of {data.total}
+                  {data.total === 0
+                    ? 'No results'
+                    : `Showing ${(page - 1) * LIMIT + 1}-${Math.min(page * LIMIT, data.total)} of ${data.total}`}
                 </p>
                 <div className="flex gap-2">
                   <button

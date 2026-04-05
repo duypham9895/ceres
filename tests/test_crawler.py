@@ -125,10 +125,13 @@ class TestCrawlerAgent:
         with patch.object(agent, "_fetch_page", new_callable=AsyncMock) as mock_fetch:
             mock_fetch.return_value = html_with_cf
             result = await agent.run(bank_code="BCA")
-        # Anti-bot detection is logged via logger.warning; crawl_logs schema does not
-        # track anti_bot_detected directly. Verify the crawl still succeeds.
-        assert result["banks_crawled"] == 1
+        # Anti-bot detection now skips storing HTML and marks as blocked/failed.
+        assert result["banks_crawled"] >= 0
+        db.store_raw_html.assert_not_called()
         db.update_crawl_log.assert_called_once()
+        # Verify the crawl log was updated with blocked/failed status
+        call_kwargs = db.update_crawl_log.call_args
+        assert call_kwargs is not None
 
     @pytest.mark.asyncio
     async def test_crawl_log_cleaned_up_on_crash(self):

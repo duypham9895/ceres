@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-const WS_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace('http', 'ws');
+const WS_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000')
+  .replace(/^https:/, 'wss:')
+  .replace(/^http:/, 'ws:');
 
 export interface CrawlEvent {
   type: string;
@@ -54,17 +56,21 @@ export function useWebSocket() {
     };
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data) as CrawlEvent;
-      if (data.type) {
-        setLastEvent(data);
-        setEventBuffer((prev) => {
-          const next = [data, ...prev].slice(0, 20);
-          saveEventBuffer(next);
-          return next;
-        });
-      }
-      if (data.type === 'job_finish' || data.type === 'job_error') {
-        queryClient.invalidateQueries();
+      try {
+        const data = JSON.parse(event.data) as CrawlEvent;
+        if (data.type) {
+          setLastEvent(data);
+          setEventBuffer((prev) => {
+            const next = [data, ...prev].slice(0, 20);
+            saveEventBuffer(next);
+            return next;
+          });
+        }
+        if (data.type === 'job_finish' || data.type === 'job_error') {
+          queryClient.invalidateQueries();
+        }
+      } catch (e) {
+        console.warn('WebSocket: invalid JSON received', e);
       }
     };
 

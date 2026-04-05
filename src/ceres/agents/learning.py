@@ -112,14 +112,14 @@ class LearningAgent(BaseAgent):
         # and average data_confidence >= threshold.
         programs_by_bank: dict[str, list[dict]] = defaultdict(list)
         for prog in programs:
-            programs_by_bank[prog.get("bank_code", "")].append(prog)
+            programs_by_bank[str(prog.get("bank_id", ""))].append(prog)
 
         for bank in banks:
             if bank.get("is_partner_ringkas", False):
                 continue
 
             bank_code = bank.get("bank_code", "")
-            bank_programs = programs_by_bank.get(bank_code, [])
+            bank_programs = programs_by_bank.get(str(bank.get("id", "")), [])
             kpr_programs = [
                 p for p in bank_programs if p.get("loan_type") == "KPR"
             ]
@@ -162,9 +162,9 @@ def _analyze_coverage(programs: list[dict]) -> dict:
 
     for prog in programs:
         loan_type = prog.get("loan_type", "unknown")
-        bank_code = prog.get("bank_code", "unknown")
+        bank_key = prog.get("bank_code") or str(prog.get("bank_id", "unknown"))
         by_loan_type[loan_type] += 1
-        by_bank[bank_code] += 1
+        by_bank[bank_key] += 1
 
     return {
         "by_loan_type": dict(by_loan_type),

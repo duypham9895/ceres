@@ -193,9 +193,9 @@ export default function BankDetail() {
         <div className="flex items-center gap-2">
           <button
             onClick={() =>
-              apiPost(`/api/crawl/learning?bank=${bank.bank_code}`).then(() =>
-                toast.success('Learning triggered'),
-              )
+              apiPost(`/api/crawl/learning?bank=${bank.bank_code}`)
+                .then(() => toast.success('Learning triggered'))
+                .catch(() => toast.error('Failed to trigger learning'))
             }
             className="px-3 py-1.5 rounded-lg text-xs font-medium bg-accent/10 text-accent border border-accent/20 hover:bg-accent/20"
           >
@@ -310,9 +310,9 @@ export default function BankDetail() {
                 pipelineSteps.crawlState === 'error' ? (
                   <button
                     onClick={() =>
-                      apiPost(`/api/crawl/crawler?bank=${bank.bank_code}`).then(() =>
-                        toast.success('Re-crawl triggered'),
-                      )
+                      apiPost(`/api/crawl/crawler?bank=${bank.bank_code}`)
+                        .then(() => toast.success('Re-crawl triggered'))
+                        .catch(() => toast.error('Failed to trigger re-crawl'))
                     }
                     className="text-xs font-medium text-accent hover:text-accent/80 border border-accent/20 rounded px-2 py-0.5"
                   >
@@ -330,9 +330,9 @@ export default function BankDetail() {
                 pipelineSteps.parseState === 'error' ? (
                   <button
                     onClick={() =>
-                      apiPost(`/api/crawl/parser?bank=${bank.bank_code}`).then(() =>
-                        toast.success('Re-parse triggered'),
-                      )
+                      apiPost(`/api/crawl/parser?bank=${bank.bank_code}`)
+                        .then(() => toast.success('Re-parse triggered'))
+                        .catch(() => toast.error('Failed to trigger re-parse'))
                     }
                     className="text-xs font-medium text-accent hover:text-accent/80 border border-accent/20 rounded px-2 py-0.5"
                   >
@@ -418,9 +418,9 @@ export default function BankDetail() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          apiPost(`/api/crawl/crawler?bank=${bank.bank_code}`).then(() =>
-                            toast.success('Re-crawl triggered'),
-                          );
+                          apiPost(`/api/crawl/crawler?bank=${bank.bank_code}`)
+                            .then(() => toast.success('Re-crawl triggered'))
+                            .catch(() => toast.error('Failed to trigger re-crawl'));
                         }}
                         className="text-[10px] font-medium text-accent hover:text-accent/80"
                       >

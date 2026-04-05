@@ -9,7 +9,9 @@ interface CrawlButtonProps {
 
 export default function CrawlButton({ agent, label, bank, variant = 'primary' }: CrawlButtonProps) {
   const { triggerCrawl, isRunning, isTriggering, error } = useCrawl();
-  const disabled = isRunning || isTriggering;
+  // For per-bank buttons, only disable while this button is triggering.
+  // For global buttons (no bank specified), also disable when any crawl is running.
+  const disabled = bank ? isTriggering : (isRunning || isTriggering);
 
   const baseStyles = 'px-4 py-2 rounded-md font-medium text-[12px] transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
   const styles = variant === 'primary'
@@ -25,7 +27,7 @@ export default function CrawlButton({ agent, label, bank, variant = 'primary' }:
       >
         {isTriggering ? 'Starting...' : label}
       </button>
-      {isRunning && !isTriggering && (
+      {isRunning && !isTriggering && !bank && (
         <span className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-border-light text-text-secondary text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
           A crawl is already running
         </span>

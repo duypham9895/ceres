@@ -116,18 +116,43 @@ def _extract_dot_separated_amounts(text: str) -> list[int]:
 _LOAN_TYPE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"KPR|Kredit\s+Pemilikan\s+Rumah", re.IGNORECASE), "KPR"),
     (re.compile(r"KPA|Kredit\s+Pemilikan\s+Apartemen", re.IGNORECASE), "KPA"),
+    (re.compile(r"KPT|Kredit\s+Pemilikan\s+Tanah", re.IGNORECASE), "KPT"),
     (re.compile(r"Multiguna", re.IGNORECASE), "MULTIGUNA"),
     (
         re.compile(r"Kendaraan|KKB|Kredit\s+Kendaraan\s+Bermotor", re.IGNORECASE),
         "KENDARAAN",
     ),
+    (
+        re.compile(r"Kredit\s+Modal\s+Kerja|KMK|Modal\s+Kerja", re.IGNORECASE),
+        "MODAL_KERJA",
+    ),
+    (
+        re.compile(r"Kredit\s+Investasi|KI\b|Investasi", re.IGNORECASE),
+        "INVESTASI",
+    ),
+    (
+        re.compile(r"Kredit\s+Pendidikan|Pinjaman\s+Pendidikan|Dana\s+Pendidikan", re.IGNORECASE),
+        "PENDIDIKAN",
+    ),
+    (
+        re.compile(r"Pekerja\s+Migran|PMI\b|TKI\b", re.IGNORECASE),
+        "PMI",
+    ),
+    (
+        re.compile(r"Take\s*Over|Takeover|Alih\s+Kredit", re.IGNORECASE),
+        "TAKE_OVER",
+    ),
+    (
+        re.compile(r"Refinancing|Refinansi|Top\s*Up", re.IGNORECASE),
+        "REFINANCING",
+    ),
 ]
 
 
 def normalize_loan_type(text: str) -> str:
-    """Classify loan product text into a standard type.
+    """Classify loan product text into a standard loan type.
 
-    Returns one of: KPR, KPA, MULTIGUNA, KENDARAAN, OTHER.
+    Returns one of the LoanType enum values, or OTHER if no pattern matches.
     """
     for pattern, loan_type in _LOAN_TYPE_PATTERNS:
         if pattern.search(text):

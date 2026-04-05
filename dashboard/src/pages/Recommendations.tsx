@@ -311,12 +311,19 @@ export default function Recommendations() {
 
   const totalPages = Math.ceil(data.total / LIMIT);
 
-  const summaryItems = [
-    { label: 'pending', value: 0, color: 'yellow' as const },
-    { label: 'in progress', value: 0, color: 'blue' as const },
-    { label: 'done', value: 0, color: 'green' as const },
-    { label: 'dismissed', value: 0, color: 'gray' as const },
-  ];
+  const summaryItems = (() => {
+    const items = data?.data ?? [];
+    const pendingCount = items.filter((r) => r.status === 'pending').length;
+    const inProgressCount = items.filter((r) => r.status === 'in_progress').length;
+    const doneCount = items.filter((r) => r.status === 'done').length;
+    const dismissedCount = items.filter((r) => r.status === 'dismissed').length;
+    return [
+      { label: 'pending', value: pendingCount, color: 'yellow' as const },
+      { label: 'in progress', value: inProgressCount, color: 'blue' as const },
+      { label: 'done', value: doneCount, color: 'green' as const },
+      { label: 'dismissed', value: dismissedCount, color: 'gray' as const },
+    ];
+  })();
 
   return (
     <div>

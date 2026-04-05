@@ -237,9 +237,11 @@ class TestStrategiesPagination:
         db = AsyncMock()
         db.pool = AsyncMock()
         db.pool.fetchval = AsyncMock(return_value=45)
-        db.pool.fetch = AsyncMock(return_value=[
-            {"id": "s1", "bank_code": "BCA", "bank_name": "Bank Central Asia",
-             "success_rate": 0.85, "is_active": True},
+        db.pool.fetch = AsyncMock(side_effect=[
+            [{"id": "s1", "bank_id": "00000000-0000-0000-0000-000000000001",
+              "bank_code": "BCA", "bank_name": "Bank Central Asia",
+              "success_rate": 0.85, "is_active": True}],
+            [],  # trend query returns empty
         ])
 
         app = _make_test_app(db)
@@ -262,11 +264,12 @@ class TestStrategiesBankIdFilter:
         db = AsyncMock()
         db.pool = AsyncMock()
         db.pool.fetchval = AsyncMock(return_value=2)
-        db.pool.fetch = AsyncMock(return_value=[
-            {"id": "s1", "bank_id": "uuid1", "bank_code": "BCA", "bank_name": "BCA",
-             "success_rate": 0.9, "is_active": True},
-            {"id": "s2", "bank_id": "uuid2", "bank_code": "BRI", "bank_name": "BRI",
-             "success_rate": 0.7, "is_active": True},
+        db.pool.fetch = AsyncMock(side_effect=[
+            [{"id": "s1", "bank_id": "uuid1", "bank_code": "BCA", "bank_name": "BCA",
+              "success_rate": 0.9, "is_active": True},
+             {"id": "s2", "bank_id": "uuid2", "bank_code": "BRI", "bank_name": "BRI",
+              "success_rate": 0.7, "is_active": True}],
+            [],  # trend query
         ])
 
         app = _make_test_app(db)
@@ -279,11 +282,11 @@ class TestStrategiesBankIdFilter:
         assert data["total"] == 2
         assert len(data["data"]) == 2
 
-        # Verify ANY() was used for multi-bank filter
-        fetch_call = db.pool.fetch.call_args
+        # Verify ANY() was used for multi-bank filter (first fetch call is the main query)
+        fetch_call = db.pool.fetch.call_args_list[0]
         query_str = fetch_call.args[0]
         assert "ANY(" in query_str
-        assert ["uuid1", "uuid2"] in list(fetch_call.args[1:])
+        assert sorted(fetch_call.args[1]) == ["uuid1", "uuid2"]
 
 
 class TestStrategiesSuccessRateFilter:
@@ -293,9 +296,11 @@ class TestStrategiesSuccessRateFilter:
         db = AsyncMock()
         db.pool = AsyncMock()
         db.pool.fetchval = AsyncMock(return_value=10)
-        db.pool.fetch = AsyncMock(return_value=[
-            {"id": "s1", "bank_code": "BCA", "bank_name": "BCA",
-             "success_rate": 0.85, "is_active": True},
+        db.pool.fetch = AsyncMock(side_effect=[
+            [{"id": "s1", "bank_id": "00000000-0000-0000-0000-000000000001",
+              "bank_code": "BCA", "bank_name": "BCA",
+              "success_rate": 0.85, "is_active": True}],
+            [],  # trend query
         ])
 
         app = _make_test_app(db)
@@ -307,8 +312,8 @@ class TestStrategiesSuccessRateFilter:
         data = resp.json()
         assert data["total"] == 10
 
-        # Verify success_rate >= condition is in the query
-        fetch_call = db.pool.fetch.call_args
+        # Verify success_rate >= condition is in the query (first fetch call is the main query)
+        fetch_call = db.pool.fetch.call_args_list[0]
         query_str = fetch_call.args[0]
         assert "success_rate >=" in query_str
         assert 50.0 in fetch_call.args[1:]

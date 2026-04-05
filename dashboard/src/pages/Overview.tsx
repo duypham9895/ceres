@@ -152,6 +152,7 @@ export default function Overview() {
     queryKey: ['dashboard'],
     queryFn: () => apiFetch<ExtendedDashboard>('/api/dashboard'),
     staleTime: 30_000,
+    refetchInterval: 30_000,
   });
 
   // Zone 4 panels data
@@ -277,7 +278,7 @@ export default function Overview() {
               />
               <KpiCard
                 title="Data Quality"
-                value={`${Math.round(((dashboard?.quality_avg as unknown as { avg_completeness?: number })?.avg_completeness ?? 0) * 100)}%`}
+                value={`${Math.round((dashboard?.quality_avg ?? 0) * 100)}%`}
                 delta="avg completeness"
                 deltaDirection="neutral"
                 sparkline={dashboard?.sparklines.quality as number[]}

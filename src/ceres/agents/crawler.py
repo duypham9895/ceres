@@ -133,8 +133,11 @@ class CrawlerAgent(BaseAgent):
                     if bot_result.detected:
                         anti_bot_detected = True
                         self.logger.warning(
-                            f"Anti-bot detected on {url}: {bot_result.anti_bot_type}"
+                            f"Anti-bot BLOCKED {url}: {bot_result.anti_bot_type} — skipping storage"
                         )
+                        bank_stats["failures"] += 1
+                        last_error = f"{url}: blocked by {bot_result.anti_bot_type}"
+                        continue
 
                     await self.db.store_raw_html(
                         crawl_log_id=crawl_log_id,
@@ -149,7 +152,12 @@ class CrawlerAgent(BaseAgent):
                     bank_stats["failures"] += 1
                     last_error = f"{url}: {exc}"
 
-            status = "failed" if bank_stats["failures"] > 0 else "success"
+            if bank_stats["failures"] == 0:
+                status = "success"
+            elif bank_stats["pages_fetched"] > 0:
+                status = "partial"
+            else:
+                status = "failed"
             if bank_stats["pages_fetched"] > 0:
                 bank_stats["banks_crawled"] = 1
             error_info: dict = {}
@@ -234,12 +242,19 @@ class CrawlerAgent(BaseAgent):
                 await page.goto(
                     url, wait_until="networkidle", timeout=PAGE_TIMEOUT_MS,
                 )
+                try:
+                    await page.wait_for_selector(
+                        "table, .product, .loan, [class*='rate'], [class*='bunga']",
+                        timeout=5000,
+                    )
+                except Exception:
+                    pass  # Timeout is OK, content might be in static HTML
                 html = await page.content()
             else:
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, page.get, url)
                 html = await loop.run_in_executor(
-                    None, getattr(page, "page_source", lambda: "")
+                    None, lambda: page.page_source or ""
                 )
             return html
         finally:

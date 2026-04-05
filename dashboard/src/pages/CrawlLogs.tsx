@@ -223,7 +223,9 @@ export default function CrawlLogs() {
           {/* Pagination */}
           <div className="flex items-center justify-between mt-4">
             <p className="text-[12px] text-text-muted">
-              Showing {(page - 1) * LIMIT + 1}-{Math.min(page * LIMIT, data.total)} of {data.total}
+              {data.total === 0
+                ? 'No results'
+                : `Showing ${(page - 1) * LIMIT + 1}-${Math.min(page * LIMIT, data.total)} of ${data.total}`}
             </p>
             <div className="flex gap-2">
               <button

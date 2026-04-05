@@ -96,7 +96,7 @@ async def health_check(request: Request) -> dict:
             )
             SELECT
                 MAX(cl.created_at) AS finished_at,
-                COUNT(*) FILTER (WHERE cl.status = 'SUCCESS') AS success_count,
+                COUNT(*) FILTER (WHERE cl.status = 'success') AS success_count,
                 COUNT(*) AS total_count
             FROM crawl_logs cl
             WHERE cl.created_at >= (SELECT created_at - INTERVAL '30 minutes' FROM latest)
@@ -203,6 +203,12 @@ async def dashboard_quality(request: Request) -> dict:
 # ------------------------------------------------------------------
 
 
+_BANKS_SORT_COLUMNS = {
+    "bank_code", "bank_name", "bank_category", "website_status",
+    "last_crawled_at", "programs_count", "crawl_streak", "avg_quality",
+}
+
+
 @router.get("/banks")
 async def list_banks(
     request: Request,
@@ -210,6 +216,8 @@ async def list_banks(
     limit: int = Query(20, ge=1, le=100),
     category: Optional[str] = Query(None),
     website_status: Optional[str] = Query(None),
+    sort_by: Optional[str] = Query(None),
+    sort_dir: Optional[str] = Query(None),
 ) -> dict:
     """Paginated bank list with optional category and website_status filters, includes program count."""
     db = request.app.state.db
@@ -227,6 +235,11 @@ async def list_banks(
     count_query = f"SELECT COUNT(*) FROM banks b {where}"
     total = await db.pool.fetchval(count_query, *params)
 
+    # Validate and build ORDER BY clause
+    sort_col = sort_by if sort_by in _BANKS_SORT_COLUMNS else "bank_code"
+    direction = "DESC" if sort_dir == "desc" else "ASC"
+    order_clause = f"ORDER BY {sort_col} {direction}"
+
     data_query = f"""
         SELECT
             b.*,
@@ -235,7 +248,7 @@ async def list_banks(
             COALESCE(
                 (
                     SELECT ROUND(
-                        COUNT(*) FILTER (WHERE cl30.status = 'SUCCESS')::numeric /
+                        COUNT(*) FILTER (WHERE cl30.status = 'success')::numeric /
                         NULLIF(COUNT(*), 0), 4
                     )
                     FROM crawl_logs cl30
@@ -256,7 +269,7 @@ async def list_banks(
         LEFT JOIN loan_programs lp ON lp.bank_id = b.id AND lp.is_latest = true
         {where}
         GROUP BY b.id
-        ORDER BY b.bank_code
+        {order_clause}
         LIMIT ${param_idx} OFFSET ${param_idx + 1}
     """
     rows = await db.pool.fetch(data_query, *params, limit, offset)
@@ -335,7 +348,7 @@ async def get_bank_detail(request: Request, bank_id: str):
             COALESCE(
                 (
                     SELECT ROUND(
-                        COUNT(*) FILTER (WHERE cl30.status = 'SUCCESS')::numeric /
+                        COUNT(*) FILTER (WHERE cl30.status = 'success')::numeric /
                         NULLIF(COUNT(*), 0), 4
                     )
                     FROM crawl_logs cl30
@@ -756,7 +769,7 @@ async def list_strategies(
                 cl.bank_id::text,
                 DATE(cl.created_at) AS day,
                 ROUND(
-                    COUNT(*) FILTER (WHERE cl.status = 'SUCCESS')::numeric /
+                    COUNT(*) FILTER (WHERE cl.status = 'success')::numeric /
                     NULLIF(COUNT(*), 0), 4
                 ) AS rate
             FROM crawl_logs cl
@@ -1047,6 +1060,166 @@ async def rates_trend(
             {"date": str(r["date"]), "avg_min_rate": float(r["avg_min_rate"])}
             for r in rows
         ],
+    }
+
+
+# ------------------------------------------------------------------
+# Job Status / Cancel / Queue
+# ------------------------------------------------------------------
+
+
+@router.get("/jobs/{job_id}")
+async def get_job_status(request: Request, job_id: str) -> JSONResponse:
+    """Return the status of a job by job_id.
+
+    Checks in-process jobs first, then arq Redis, then the agent_runs table.
+    """
+    runner = getattr(request.app.state, "task_runner", None)
+    db = request.app.state.db
+
+    # 1. Check in-process current job
+    if runner is not None:
+        current = runner.get_current_job()
+        if current is not None and current.job_id == job_id:
+            return JSONResponse({
+                "job_id": current.job_id,
+                "agent": current.agent,
+                "bank_code": None,
+                "status": current.status.value if hasattr(current.status, "value") else str(current.status),
+                "started_at": _iso(current.started_at),
+                "completed_at": None,
+                "error": None,
+            })
+
+    # 2. Check arq Redis for the job
+    try:
+        from arq.jobs import Job as ArqJob
+
+        config = request.app.state.config
+        from arq import create_pool
+        from arq.connections import RedisSettings
+
+        pool = await create_pool(RedisSettings.from_dsn(config.redis_url))
+        try:
+            arq_job = ArqJob(job_id, pool)
+            info = await arq_job.info()
+            if info is not None:
+                status_str = info.status if isinstance(info.status, str) else info.status.value
+                return JSONResponse({
+                    "job_id": job_id,
+                    "agent": (info.kwargs or {}).get("agent_name"),
+                    "bank_code": (info.kwargs or {}).get("bank_code"),
+                    "status": status_str,
+                    "started_at": _iso(info.enqueue_time),
+                    "completed_at": None,
+                    "error": None,
+                })
+        finally:
+            await pool.close()
+    except Exception:
+        pass
+
+    # 3. Check agent_runs table for historical jobs
+    row = await db.pool.fetchrow(
+        """
+        SELECT id, agent_name, status, started_at, finished_at, error_message, result, job_id
+        FROM agent_runs
+        WHERE job_id = $1
+        ORDER BY started_at DESC
+        LIMIT 1
+        """,
+        job_id,
+    )
+    if row is not None:
+        return JSONResponse({
+            "job_id": row["job_id"],
+            "agent": row["agent_name"],
+            "bank_code": None,
+            "status": row["status"],
+            "started_at": _iso(row["started_at"]),
+            "completed_at": _iso(row["finished_at"]),
+            "error": row["error_message"],
+        })
+
+    return _error("Job not found", code="NOT_FOUND", status=404)
+
+
+@router.post("/jobs/cancel")
+async def cancel_jobs(request: Request) -> JSONResponse:
+    """Cancel running jobs.
+
+    Cancels the in-process job unconditionally. If a ``job_id`` is provided
+    in the request body, also attempts to abort the arq job in Redis.
+    """
+    runner = getattr(request.app.state, "task_runner", None)
+
+    # Cancel in-process job
+    if runner is not None:
+        await runner.cancel_all()
+
+    # Optionally cancel a specific arq job by id
+    body: dict = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+
+    arq_job_id = body.get("job_id")
+    if arq_job_id is not None:
+        try:
+            from arq.jobs import Job as ArqJob
+
+            config = request.app.state.config
+            from arq import create_pool
+            from arq.connections import RedisSettings
+
+            pool = await create_pool(RedisSettings.from_dsn(config.redis_url))
+            try:
+                arq_job = ArqJob(arq_job_id, pool)
+                await arq_job.abort()
+            finally:
+                await pool.close()
+        except Exception:
+            pass
+
+    return JSONResponse({"status": "cancelled"})
+
+
+@router.get("/queue/status")
+async def queue_status(request: Request) -> dict:
+    """Return queue statistics: pending, running, failed counts, and recent completions."""
+    db = request.app.state.db
+
+    stats = await db.pool.fetchrow(
+        """
+        SELECT
+            COUNT(*) FILTER (WHERE status = 'running') AS running,
+            COUNT(*) FILTER (WHERE status = 'failed') AS failed,
+            COUNT(*) FILTER (WHERE status = 'success'
+                             AND finished_at >= NOW() - INTERVAL '1 hour') AS recent_completions
+        FROM agent_runs
+        """
+    )
+
+    # Count pending arq jobs via Redis if available
+    pending = 0
+    try:
+        config = request.app.state.config
+        import redis.asyncio as aioredis
+
+        r = aioredis.from_url(config.redis_url)
+        try:
+            pending = await r.zcard("arq:queue")
+        finally:
+            await r.aclose()
+    except Exception:
+        pass
+
+    return {
+        "pending": pending,
+        "running": stats["running"] if stats else 0,
+        "failed": stats["failed"] if stats else 0,
+        "recent_completions": stats["recent_completions"] if stats else 0,
     }
 
 

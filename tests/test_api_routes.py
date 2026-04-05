@@ -28,6 +28,16 @@ class TestDashboardRoute:
         db.get_crawl_stats = AsyncMock(return_value={
             "total_crawls": 10, "successful": 8, "failed": 2,
             "blocked": 0, "banks_crawled": 1, "total_programs_found": 5,
+            "new_programs": 2,
+        })
+        db.get_dashboard_quality = AsyncMock(return_value={
+            "avg_confidence": 0.72, "avg_completeness": 0.65,
+        })
+        db.get_dashboard_sparklines = AsyncMock(return_value={
+            "banks": [1, 1, 1, 1, 1, 1, 1, 1],
+            "programs": [0, 0, 0, 0, 0, 0, 0, 0],
+            "kpr_rate": [5.0, 5.0],
+            "quality": [0.6, 0.65],
         })
         app = make_test_app(db)
         transport = ASGITransport(app=app)
@@ -69,6 +79,7 @@ class TestBanksRoute:
         db.pool.fetchrow = AsyncMock(side_effect=[
             {"id": "1", "bank_code": "BCA", "bank_name": "BCA"},  # bank lookup
             {"total_pages": 0, "parsed_pages": 0, "unparsed_pages": 0},  # raw_data_stats
+            {"success_rate_30d": 0.0, "avg_quality": 0.0, "avg_confidence": 0.0},  # health_stats
         ])
         db.pool.fetch = AsyncMock(return_value=[])
         db.fetch_loan_programs = AsyncMock(return_value=[])

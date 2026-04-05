@@ -100,7 +100,7 @@ class CrawlTaskRunner:
         ``QUEUED`` status.  Otherwise the legacy single-concurrency
         in-process path is used (returns ``None`` when blocked).
         """
-        _inprocess_agents = {"daily", "parser"}
+        _inprocess_agents = {"parser"}
         if self._arq_pool is not None and agent not in _inprocess_agents:
             return await self._enqueue_job(agent, bank_code=bank_code, force=force)
         return await self._start_job_inprocess(agent, bank_code=bank_code, force=force)

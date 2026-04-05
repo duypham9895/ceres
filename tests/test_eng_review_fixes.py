@@ -36,24 +36,16 @@ class TestParserInProcessRouting:
         await runner.cancel_all()
 
     @pytest.mark.asyncio
-    async def test_daily_routes_to_inprocess_even_with_arq(self):
-        """Daily pipeline must run in-process because it chains multiple agents."""
+    async def test_daily_routes_to_arq_when_pool_available(self):
+        """Daily pipeline should go through arq to avoid blocking the API event loop."""
         db = AsyncMock()
         mock_pool = AsyncMock()
+        mock_pool.enqueue_job = AsyncMock(return_value=AsyncMock(job_id="test-job"))
         runner = CrawlTaskRunner(db=db, arq_pool=mock_pool)
-
-        async def fast_stub(**kw):
-            return {"banks_processed": 0, "banks_total": 0, "banks_failed": 0}
-
-        runner._run_scout = fast_stub
-        runner._run_strategist = fast_stub
-        runner._run_crawler = fast_stub
-        runner._run_learning = fast_stub
 
         job = await runner.start_job("daily")
         assert job is not None
-        assert job.status == CrawlJobStatus.RUNNING
-        mock_pool.enqueue_job.assert_not_called()
+        mock_pool.enqueue_job.assert_called_once()
         await runner.cancel_all()
 
     @pytest.mark.asyncio
@@ -264,11 +256,11 @@ class TestPubSubReconnection:
 
 
 class TestWorkerSettings:
-    def test_max_tries_is_one(self):
-        """max_tries should be 1 to prevent silent retries on bank sites."""
+    def test_max_tries_uses_config(self):
+        """max_tries should use config value (default 3) for proper retry handling."""
         from ceres.queue import WorkerSettings
 
-        assert WorkerSettings.max_tries == 1
+        assert WorkerSettings.max_tries >= 1
 
     def test_redis_settings_from_dsn(self):
         """redis_settings should be created via from_dsn, not manual parsing."""

@@ -1,6 +1,24 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ceres
+      POSTGRES_PASSWORD: ceres
+      POSTGRES_DB: ceres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ceres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   redis:
     image: redis:7-alpine
+    command: redis-server --appendonly yes
     ports: ["6379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -15,6 +33,10 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://ceres:ceres@postgres:5432/ceres
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/status"]
       interval: 10s
@@ -32,8 +54,12 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
       api:
         condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://ceres:ceres@postgres:5432/ceres
     deploy:
       resources:
         limits:
@@ -49,3 +75,6 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+volumes:
+  pgdata:

@@ -110,6 +110,11 @@ CREATE INDEX idx_loan_programs_bank_id ON loan_programs(bank_id);
 CREATE INDEX idx_loan_programs_loan_type ON loan_programs(loan_type);
 CREATE INDEX idx_loan_programs_latest ON loan_programs(is_latest) WHERE is_latest = true;
 
+-- Prevent duplicate "latest" rows per bank/program/loan_type combination
+CREATE UNIQUE INDEX IF NOT EXISTS idx_loan_programs_latest_unique
+    ON loan_programs (bank_id, program_name, loan_type)
+    WHERE is_latest = true;
+
 -- 4. Crawl Logs
 CREATE TABLE crawl_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -218,9 +223,11 @@ CREATE TABLE agent_runs (
     finished_at TIMESTAMPTZ,
     error_message TEXT,
     result JSONB,
-    rows_written INTEGER DEFAULT 0
+    rows_written INTEGER DEFAULT 0,
+    job_id TEXT
 );
 
 CREATE INDEX idx_agent_runs_agent_name ON agent_runs(agent_name, started_at DESC);
+CREATE INDEX idx_agent_runs_job_id ON agent_runs(job_id) WHERE job_id IS NOT NULL;
 
 CREATE INDEX idx_proxies_status ON proxies(status);

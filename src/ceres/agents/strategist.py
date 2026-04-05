@@ -150,12 +150,14 @@ class StrategistAgent(BaseAgent):
 
             loan_urls = await self._discover_loan_urls(page, base_url)
 
+            selectors = await self._discover_selectors(page, loan_urls)
+
             return {
                 "anti_bot_detected": anti_bot_result.detected,
                 "anti_bot_type": anti_bot_result.anti_bot_type,
                 "bypass_method": bypass_method,
                 "loan_page_urls": loan_urls,
-                "selectors": {},
+                "selectors": selectors,
                 "rate_limit_ms": _DEFAULT_RATE_LIMIT_MS,
             }
         finally:
@@ -179,6 +181,91 @@ class StrategistAgent(BaseAgent):
             return "undetected_chrome"
 
         return "headless_browser"
+
+    async def _discover_selectors(
+        self, page: Any, loan_urls: list[str]
+    ) -> dict:
+        """Analyze loan page HTML to discover CSS selectors for data extraction.
+
+        Navigates to the first loan URL and inspects the DOM for common
+        patterns: tables with rate data, product cards, and loan info lists.
+        Returns a selector config compatible with SelectorExtractor.
+        """
+        if not loan_urls:
+            return {}
+
+        url = loan_urls[0]
+        try:
+            response = await page.goto(
+                url, wait_until="domcontentloaded", timeout=15000
+            )
+            if response is None or response.status >= 400:
+                return {}
+
+            # Use JavaScript to inspect the DOM for common selector patterns
+            selectors = await page.evaluate("""() => {
+                const result = {container: null, fields: {}};
+
+                // Strategy 1: Look for tables with rate/bunga keywords
+                const tables = document.querySelectorAll('table');
+                for (const table of tables) {
+                    const text = table.textContent.toLowerCase();
+                    if (text.includes('bunga') || text.includes('rate') || text.includes('suku')) {
+                        const rows = table.querySelectorAll('tr');
+                        if (rows.length > 1) {
+                            result.container = 'table tr';
+                            result.fields = {
+                                name: 'td:first-child',
+                                rate: 'td:nth-child(2)',
+                                tenure: 'td:nth-child(3)',
+                                amount: 'td:nth-child(4)',
+                            };
+                            return result;
+                        }
+                    }
+                }
+
+                // Strategy 2: Look for product card patterns
+                const cardSelectors = [
+                    '.product-card', '.loan-card', '.card-product',
+                    '[class*="product"]', '[class*="loan-item"]',
+                    '.produk', '[class*="kredit"]',
+                ];
+                for (const sel of cardSelectors) {
+                    const cards = document.querySelectorAll(sel);
+                    if (cards.length >= 2) {
+                        result.container = sel;
+                        // Look for heading and rate-like elements inside first card
+                        const card = cards[0];
+                        const heading = card.querySelector('h2, h3, h4, .title, .name, strong');
+                        const rateEl = card.querySelector('[class*="rate"], [class*="bunga"], .rate, .interest');
+                        if (heading) result.fields.name = heading.tagName.toLowerCase();
+                        if (rateEl) result.fields.rate = '.' + [...rateEl.classList].join('.');
+                        return result;
+                    }
+                }
+
+                // Strategy 3: Look for definition lists or labeled values
+                const dls = document.querySelectorAll('dl');
+                for (const dl of dls) {
+                    const text = dl.textContent.toLowerCase();
+                    if (text.includes('bunga') || text.includes('rate') || text.includes('tenor')) {
+                        result.container = 'dl';
+                        result.fields = {name: 'dt', rate: 'dd'};
+                        return result;
+                    }
+                }
+
+                return result;
+            }""")
+
+            if selectors and selectors.get("container") and selectors.get("fields"):
+                return selectors
+
+        except Exception:
+            self.logger.debug("Failed to discover selectors from %s", url)
+
+        return {}
 
     async def _discover_loan_urls(
         self, page: Any, base_url: str
